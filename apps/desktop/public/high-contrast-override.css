@@ -1,0 +1,57 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   High-contrast override for the Nous light theme.
+   Loaded after the built stylesheet so these win on source order.
+   Goal: keep the light theme but make faint/grey text legible.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. Stop dimming scaffolding (chain-of-thought, tool rows, thinking) ── */
+/* The built CSS fades [data-conversation-scaffold] to 0.67 opacity.         */
+/* Lift it to full opacity so thinking/tool text is as legible as prose.     */
+[data-slot='aui_assistant-message-content'] [data-conversation-scaffold] {
+  opacity: 1 !important;
+}
+
+/* ── 2. Boost the scaffold text colours (defined in :root in styles.css) ── */
+/* --conversation-scaffold-text is 64% of the base colour; bump to 88%.     */
+/* --conversation-scaffold-meta is 44%; bump to 72%.                          */
+:root {
+  --conversation-scaffold-text: color-mix(in srgb, var(--ui-base) 88%, transparent) !important;
+  --conversation-scaffold-meta: color-mix(in srgb, var(--ui-base) 72%, transparent) !important;
+
+  /* Muted/tertiary text — the "grey on white" the user can't read.           */
+  /* Tertiary is 54%; bump to 78%. Quaternary is 36%; bump to 64%.           */
+  --ui-text-tertiary: color-mix(in srgb, var(--ui-base) 78%, transparent) !important;
+  --ui-text-quaternary: color-mix(in srgb, var(--ui-base) 64%, transparent) !important;
+
+  /* Secondary text is 74%; bump to 90% for slightly better body contrast.    */
+  --ui-text-secondary: color-mix(in srgb, var(--ui-base) 90%, transparent) !important;
+
+  /* Font sizes — the conversation body is 0.8125rem (13px) and tools are    */
+  /* 0.6875rem (11px). Bump both up one step so small text is readable.      */
+  --conversation-text-font-size: 0.875rem !important;
+  --conversation-tool-font-size: 0.75rem !important;
+  --conversation-caption-font-size: 0.8125rem !important;
+}
+
+/* ── 3. Composer placeholder — was 60% of muted-foreground, bump up ─────── */
+[data-slot='composer-rich-input']:is(:empty, [data-empty])::before {
+  color: color-mix(in srgb, var(--muted-foreground) 85%, transparent) !important;
+}
+
+/* ── 4. Muted-foreground token used by shadcn components ─────────────────── */
+/* --dt-muted-foreground derives from --ui-text-tertiary, which we already   */
+/* boosted above. But some components read --muted-foreground directly, so   */
+/* pin it here too.                                                           */
+:root {
+  --dt-muted-foreground: color-mix(in srgb, var(--ui-base) 78%, transparent) !important;
+}
+
+/* ── 5. Keep hover-lift on scaffold but don't dim the resting state ─────── */
+/* The built rule lifts opacity to 1 on hover. With opacity already 1 this   */
+/* is a no-op, but keep the transition smooth.                               */
+[data-slot='aui_assistant-message-content'] [data-conversation-scaffold] {
+  transition: opacity 120ms ease-out;
+}
+
+/* ── 6. Selection background — keep it visible but not harsh ─────────────── */
+/* Already defined as yellow selection; leave as-is.                          */
