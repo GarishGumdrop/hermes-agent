@@ -31,7 +31,22 @@ clash using this file as the statement of what each fork change is for.
 - **If it breaks:** usually a store in `apps/desktop/src/store/` was renamed or
   its setter changed. Update the import and the table entry; keep the setting.
 
-### 2. High-contrast override for the light theme
+### 2. Agent screenshots of the app window
+
+- **Files:** `apps/desktop/electron/fork/window-capture.ts` (new file); in
+  `apps/desktop/electron/main.ts`, one import line and the one line
+  `registerForkWindowCapture()` next to the `hermes:capturePreview` handler; in
+  `apps/desktop/electron/preload.ts`, the `exposeInMainWorld('hermesFork', ...)`
+  block at the end of the file.
+- **Purpose:** lets the agent take a screenshot of the Hermes Desktop window
+  (`window.hermesFork.captureWindow()` saves a PNG and returns its path). The
+  desktop-settings-bridge plugin relays the agent's request (`bridge.py
+  screenshot`). It never moves focus or restores a minimised window.
+- **If it breaks:** keep the registration call anywhere in main.ts that runs at
+  startup before windows open, and keep the preload block after the app's own
+  `exposeInMainWorld('hermesDesktop', ...)` call.
+
+### 3. High-contrast override for the light theme
 
 - **Files:** `apps/desktop/public/high-contrast-override.css` (new file); one
   `<link rel="stylesheet">` line in `apps/desktop/index.html`.

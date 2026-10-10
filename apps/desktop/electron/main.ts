@@ -266,6 +266,7 @@ import {
   stopFind
 } from './find-in-page'
 import { createFirstRunSetupGate } from './first-run-setup-gate'
+import { registerForkWindowCapture } from './fork/window-capture'
 import { registerFsIpc } from './fs-ipc'
 import type {
   GatewayFileSaveContext,
@@ -17987,6 +17988,8 @@ ipcMain.handle('hermes:capturePreview', async (_event, payload) => {
 
   return capturePreviewContents(guest, payload?.rect, payload?.viewport)
 })
+
+registerForkWindowCapture() // GarishGumdrop fork: agent screenshots of this window (see FORK.md)
 
 ipcMain.handle('hermes:saveImageBuffer', async (_event, payload) => {
   const data = payload?.data

@@ -714,3 +714,8 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     return () => ipcRenderer.removeListener('hermes:open-find-bar', listener)
   }
 })
+
+// GarishGumdrop fork: agent screenshots of this window (electron/fork/window-capture.ts, FORK.md).
+contextBridge.exposeInMainWorld('hermesFork', {
+  captureWindow: () => ipcRenderer.invoke('hermes:fork:captureWindow')
+})
