@@ -102,3 +102,17 @@ clash using this file as the statement of what each fork change is for.
   suites. It now records findings, not searches; check rules only with a named target; and nothing
   that SOUL.md, the profile or memory already say.
 - **If it breaks:** keep the three bullets in whatever block lists what the reviewer must not capture.
+
+### 7. Configurable skill description length, checked before a new skill is staged
+
+- **Files:** `agent/skill_utils.py` (`skill_prompt_desc_limit()`, used by the index truncation);
+  `tools/skill_manager_tool.py` (`_staged_create_error` in `_run_write_gate`, limit in the create
+  check and the tool description); `tools/skill_linter.py`; `hermes_cli/config_defaults.py`
+  (`skills.description_limit`); docs in `website/docs/user-guide/features/skills.md`; tests in
+  `tests/tools/test_skill_description_limit.py`.
+- **Purpose:** the user's limit is 100 characters (default 60), so each skill's line can say when
+  not to use it. A new skill that would fail on approval (too-long description, bad name, bad
+  frontmatter) is refused when proposed, so the author fixes it and the user never approves
+  something that then fails. The tool description states the real limit.
+- **If it breaks:** keep the limit read from config in one function, and the create checks running
+  before a skill write is staged.

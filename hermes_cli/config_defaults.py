@@ -1483,6 +1483,10 @@ DEFAULT_CONFIG = {
         # Separate gate for EDITS to existing skills (patch/edit/write_file/remove_file). None =
         # follow write_approval; set it to split the two (write_approval then covers create/delete).
         "write_approval_edits": None,
+        # Characters of each skill's description shown in the system-prompt skill index, and the
+        # most a NEW skill's description may have. Every skill's line costs this much in every
+        # conversation; longer leaves room to say when NOT to use a skill. Minimum 20.
+        "description_limit": 60,
         # Audit ledger: every skill mutation appends to ~/.hermes/skills/.curator_ledger.jsonl with
         # before/after hashes (blobs under ~/.hermes/.curator_backups/blobs/); powers `hermes
         # curator ledger` / `rollback <entry-id>`. Never a gate — failures can't block.

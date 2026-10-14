@@ -819,7 +819,18 @@ def resolve_skill_config_values(config_vars: list[dict[str, Any]]) -> dict[str, 
     return resolved
 
 
-SKILL_PROMPT_DESC_LIMIT = 60
+SKILL_PROMPT_DESC_LIMIT = 60  # default; ``skills.description_limit`` overrides it
+
+
+def skill_prompt_desc_limit() -> int:
+    """Characters of a skill description shown in the system-prompt skill index (and the most a
+    new skill's description may have): ``skills.description_limit``, else SKILL_PROMPT_DESC_LIMIT."""
+    try:
+        from hermes_cli.config import load_config
+        value = int(((load_config() or {}).get("skills") or {}).get("description_limit") or 0)
+    except Exception:
+        value = 0
+    return value if value >= 20 else SKILL_PROMPT_DESC_LIMIT
 
 
 def _normalize_skill_description(frontmatter: dict[str, Any]) -> str:
@@ -830,13 +841,13 @@ def _normalize_skill_description(frontmatter: dict[str, Any]) -> str:
 
 def extract_skill_description(frontmatter: dict[str, Any]) -> str:
     """Extract a system-prompt-length description from parsed frontmatter."""
-    desc = _normalize_skill_description(frontmatter)
-    return desc[:SKILL_PROMPT_DESC_LIMIT - 3] + "..." if len(desc) > SKILL_PROMPT_DESC_LIMIT else desc
+    desc, limit = _normalize_skill_description(frontmatter), skill_prompt_desc_limit()
+    return desc[:limit - 3] + "..." if len(desc) > limit else desc
 
 
 def is_skill_description_truncated_for_prompt(frontmatter: dict[str, Any]) -> bool:
     """True when the description will be truncated in the system prompt skill index."""
-    return len(_normalize_skill_description(frontmatter)) > SKILL_PROMPT_DESC_LIMIT
+    return len(_normalize_skill_description(frontmatter)) > skill_prompt_desc_limit()
 
 
 def iter_skill_index_files(skills_dir: Path, filename: str):

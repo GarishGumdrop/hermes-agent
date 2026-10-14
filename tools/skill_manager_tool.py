@@ -26,7 +26,7 @@ from agent.skill_utils import (
     extract_skill_description,
     is_skill_description_truncated_for_prompt,
     parse_frontmatter as _parse_frontmatter,
-    SKILL_PROMPT_DESC_LIMIT)
+    skill_prompt_desc_limit)
 from tools.skill_manager_guards import (
     _background_review_delete_guard, _background_review_preflight, _background_review_read_before_write_guard,
     _containing_skills_root, _curator_consolidation_delete_guard, _is_path_redirect, _pinned_guard,
@@ -145,7 +145,7 @@ def _validate_category(category: Optional[str]) -> Optional[str]:
 
 def _validate_frontmatter(content: str, *, new_skill: bool = False) -> Optional[str]:
     """Validate frontmatter (name + description) and a non-empty body. ``new_skill`` (create
-    only) also enforces SKILL_PROMPT_DESC_LIMIT so new skills never lose routing signal to
+    only) also enforces skill_prompt_desc_limit() so new skills never lose routing signal to
     index truncation; edit/patch skip it so existing over-limit skills stay maintainable."""
     if not content.strip():
         return "Content cannot be empty."
@@ -167,12 +167,12 @@ def _validate_frontmatter(content: str, *, new_skill: bool = False) -> Optional[
     desc = str(parsed["description"])
     if len(desc) > MAX_DESCRIPTION_LENGTH:
         return f"Description exceeds {MAX_DESCRIPTION_LENGTH} characters."
-    if new_skill and len(desc.strip().strip("'\"")) > SKILL_PROMPT_DESC_LIMIT:
+    if new_skill and len(desc.strip().strip("'\"")) > (limit := skill_prompt_desc_limit()):
         return (
             f"Description is {len(desc.strip())} chars — new skills must fit the "
-            f"{SKILL_PROMPT_DESC_LIMIT}-char system-prompt budget (one sentence, trigger first, "
+            f"{limit}-char system-prompt budget (one sentence, trigger first, "
             f"ends with a period). The skill index truncates longer descriptions to "
-            f"{SKILL_PROMPT_DESC_LIMIT - 3} chars + '...', destroying the routing signal. "
+            f"{limit - 3} chars + '...', destroying the routing signal. "
             f"Move detail into the skill body.")
     if not content[end_match.end() + 3:].strip():
         return "SKILL.md must have content after the frontmatter (instructions, procedures, etc.)."
@@ -419,7 +419,7 @@ def _add_description_prompt_preview(result: dict[str, Any], content: str) -> dic
     if is_skill_description_truncated_for_prompt(fm):
         result["system_prompt_preview"] = (
             f"System prompt will show: \"{extract_skill_description(fm)}\" — keep the trigger "
-            f"self-contained in the first {SKILL_PROMPT_DESC_LIMIT - 3} chars.")
+            f"self-contained in the first {skill_prompt_desc_limit() - 3} chars.")
     return result
 
 
@@ -654,6 +654,23 @@ _skill_gate_bypass: _ctxvars.ContextVar[bool] = _ctxvars.ContextVar(
     "skill_gate_bypass", default=False)
 
 
+def _staged_create_error(payload: dict) -> Optional[str]:
+    """Run the checks a create would hit on approval NOW, so the author fixes it before it is
+    staged instead of the user's approval failing later. Only creates: an edit's checks depend on
+    the skill as it will be when approved."""
+    ops = payload.get("operations") if payload.get("action") == "batch" else [payload]
+    for op in ops or []:
+        if not isinstance(op, dict) or op.get("action") != "create":
+            continue
+        name = op.get("name") or payload.get("name") or ""
+        content = op.get("content") or ""
+        for err in (_validate_name(name), _validate_category(op.get("category")),
+                    _validate_frontmatter(content, new_skill=True), _validate_content_size(content)):
+            if err:
+                return f"Not staged — create on '{name}' would fail on approval: {err}"
+    return None
+
+
 def _run_write_gate(build_staging, actions):
     """Shared write gate: None to proceed, else a JSON tool result (blocked/staged).
     ``actions`` are the write's skill_manage actions (they pick the switch that applies).
@@ -669,6 +686,8 @@ def _run_write_gate(build_staging, actions):
     if decision.blocked:
         return tool_error(decision.message, success=False)
     payload, gist = build_staging(wa)
+    if (err := _staged_create_error(payload)) is not None:
+        return tool_error(err, success=False)
     record = wa.stage_write(wa.SKILLS, payload, summary=gist, origin=wa.current_origin())
     return json.dumps({"success": True, "staged": True, "pending_id": record["id"],
                        "gist": gist, "message": decision.message}, ensure_ascii=False)
@@ -830,9 +849,10 @@ def _skill_manage_description() -> str:
         "ops), patch (targeted old_string/new_string fix — preferred; "
         "content alone REPLACES the whole file, read it via skill_view() "
         "first), write_file/remove_file (supporting files), delete (sole "
-        "op only). Existing skills are modified wherever they live. Keep "
-        "the description's first 57 chars a self-contained trigger: 'Use "
-        "when <trigger>. <one-line behavior>.' Write lessons, not logs: "
+        "op only). Existing skills are modified wherever they live. A new "
+        f"skill's description is at most {skill_prompt_desc_limit()} characters, one "
+        "sentence, trigger first: 'Use when <trigger>. <one-line behavior>.' Longer is "
+        "refused. Write lessons, not logs: "
         "imperative rule + why, no PR numbers/dates/incident narration, one "
         "rule per lesson, references/ named by topic (extend before adding). "
         "skill_view() shows format conventions."

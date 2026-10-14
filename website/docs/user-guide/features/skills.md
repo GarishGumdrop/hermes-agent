@@ -679,6 +679,11 @@ skills:
   # write_approval_edits:   # optional: separate switch for edits to existing skills
 ```
 
+Each skill's description appears in the system-prompt skill index, cut to
+`skills.description_limit` characters (default 60); a new skill's description
+may not be longer. A higher limit costs a little prompt space per skill and
+lets each line say when not to use the skill.
+
 `write_approval` covers every skill write unless `write_approval_edits` is set.
 Set it to split the two: `write_approval` then covers writes that change
 **which** skills exist (create / delete), and `write_approval_edits` covers
