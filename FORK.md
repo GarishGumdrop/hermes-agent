@@ -92,3 +92,13 @@ clash using this file as the statement of what each fork change is for.
 - **If it breaks:** upstream probably reshaped the approval gate or the computer_use dispatcher. Keep
   the rule: captures (and `capture_after`) are gated when the setting is on, and that gate is not
   skipped by yolo or approvals-off.
+
+### 6. Background reviewer: do not record searches, unscoped check rules, or standing rules
+
+- **Files:** `agent/background_review.py` (three bullets in `_DO_NOT_CAPTURE_BLOCK`, shared by the
+  skill and combined review prompts).
+- **Purpose:** the reviewer turned the agent's wide searches and "verify everything" reactions into
+  standing procedure, which made later sessions sweep logs, other conversations and whole test
+  suites. It now records findings, not searches; check rules only with a named target; and nothing
+  that SOUL.md, the profile or memory already say.
+- **If it breaks:** keep the three bullets in whatever block lists what the reviewer must not capture.
