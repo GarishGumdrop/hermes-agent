@@ -461,7 +461,27 @@ def _compose_rewriters(*fns):
     return run
 
 
+def _rewrite_computer_use(td: dict[str, Any], available: set) -> Optional[dict[str, Any]]:
+    """With computer_use.capture_approval on, the schema must not call `capture` free: each capture asks the user."""
+    try:
+        from tools.computer_use.tool import capture_approval_enabled
+        if not capture_approval_enabled():
+            return td
+    except Exception:
+        return td
+    import copy
+    td = copy.deepcopy(td)
+    action = (td.get("function", {}).get("parameters", {}).get("properties", {}).get("action")) or {}
+    old = "`capture` is free (no side effects)."
+    if old in action.get("description", ""):
+        action["description"] = action["description"].replace(
+            old, "`capture` (and `capture_after`) shows the user an approval prompt every time; a denied "
+                 "capture means look another way, do not retry.")
+    return td
+
+
 _DYNAMIC_SCHEMA_REWRITERS = {
+    "computer_use": _rewrite_computer_use,
     "execute_code": _rewrite_execute_code,
     "discord": _discord_rewriter("get_dynamic_schema_core"),
     "discord_admin": _discord_rewriter("get_dynamic_schema_admin"),

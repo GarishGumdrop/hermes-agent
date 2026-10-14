@@ -1480,6 +1480,9 @@ DEFAULT_CONFIG = {
         # review fork. true = ALWAYS stage (SKILL.md too large for an inline prompt): /skills
         # pending, /skills diff <id>, /skills approve|reject <id>.
         "write_approval": False,
+        # Separate gate for EDITS to existing skills (patch/edit/write_file/remove_file). None =
+        # follow write_approval; set it to split the two (write_approval then covers create/delete).
+        "write_approval_edits": None,
         # Audit ledger: every skill mutation appends to ~/.hermes/skills/.curator_ledger.jsonl with
         # before/after hashes (blobs under ~/.hermes/.curator_backups/blobs/); powers `hermes
         # curator ledger` / `rollback <entry-id>`. Never a gate — failures can't block.
@@ -2558,6 +2561,10 @@ DEFAULT_CONFIG = {
         # capture_after mode: som = screenshot + overlays; ax = elements only, no PNG (faster);
         # vision = pixels only.
         "capture_after_mode": "som",
+        # True = every screen capture (`capture`, and `capture_after` on an input action) asks the
+        # user first, even with approvals off or --yolo: a capture sends the screen's contents to the
+        # model. Answering "session"/"always" at the prompt grants later captures as usual.
+        "capture_approval": False,
         # Bound cua-driver's accessibility-tree WALK on every capture (get_window_state max_elements).
         # _DEFAULT_MAX_ELEMENTS in tools/computer_use/tool.py caps the SURFACED element list at 100 and
         # spills the rest to a cache file, so an unbounded walk pays for nodes the model never sees:

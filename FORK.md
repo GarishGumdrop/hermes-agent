@@ -75,3 +75,20 @@ clash using this file as the statement of what each fork change is for.
   Keep the rule: a skill write is held only if one of its actions falls under a
   switch that is on (create/delete → `write_approval`, everything else →
   `write_approval_edits`).
+
+### 5. Approval prompt for every computer-use screen capture
+
+- **Files:** `tools/computer_use/tool.py` (`capture_approval_enabled`, `_capture_needs_approval`, the
+  `capture` scope in `handle_computer_use`, capture wording in `_request_approval`); `tools/approval.py`
+  (`ignore_bypass` on `_run_approval_gate`); `model_tools.py` (`_rewrite_computer_use`);
+  `hermes_cli/config_defaults.py` (`computer_use.capture_approval`, and `skills.write_approval_edits`
+  from change 4); docs in `website/docs/user-guide/features/computer-use.md`; tests in
+  `tests/tools/test_computer_use_capture_approval.py`.
+- **Purpose:** with `computer_use.capture_approval: true`, a screen-control capture always shows
+  the approve/deny prompt, even though the user runs with approvals off. A capture sends his desktop
+  to the model; he wants that only with his say-so, enforced by Hermes rather than by rules in text.
+  The tool description tells the model so. In-app screenshots (browser tool, Hermes window capture)
+  do not go through computer_use and are unaffected. Off by default: standard behaviour unchanged.
+- **If it breaks:** upstream probably reshaped the approval gate or the computer_use dispatcher. Keep
+  the rule: captures (and `capture_after`) are gated when the setting is on, and that gate is not
+  skipped by yolo or approvals-off.

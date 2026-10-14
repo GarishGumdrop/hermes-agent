@@ -379,6 +379,10 @@ Hermes applies multi-layer guardrails:
   (`approvals.cron_mode`), single-query, unattended platforms, or any
   headless run — the action is refused rather than auto-approved;
   `--yolo` / `/yolo` still bypass.
+- Screen captures are free by default. Set `computer_use.capture_approval: true`
+  to have every capture (`capture`, and `capture_after` on an input action) ask
+  first, keyed `cua:capture:screen`. This prompt ignores `--yolo` and
+  `approvals.mode: off`, so it holds even when everything else runs unasked.
 - Hard-blocked key combos at the tool level: empty trash, force delete,
   lock screen, log out, force log out.
 - Hard-blocked type patterns: `curl | bash`, `sudo rm -rf /`, fork

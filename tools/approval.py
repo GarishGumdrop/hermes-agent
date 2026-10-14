@@ -948,6 +948,7 @@ def _run_approval_gate(
     advice: str = "Find an alternative approach that avoids this action.",
     cron_deny_message: str = "", single_query_deny_message: str = "", unattended_deny_message: str = "",
     autoapprove_log_prefix: str, fail_closed_when_no_human: bool = False, no_human_block_message: str = "",
+    ignore_bypass: bool = False,
 ) -> dict:
     """Shared human-approval gate for a flagged action (tool call or write): decision core for
     :func:`request_tool_approval` and the file-tool write gates.
@@ -956,7 +957,8 @@ def _run_approval_gate(
     prompt → persistence. Input-shape checks (hardline, allowlist, pattern detection) are the
     caller's job. ``fail_closed_when_no_human``: a non-interactive, non-gateway, non-cron
     context without an ask bridge BLOCKS instead of auto-approving, so a plugin-flagged action
-    never runs ungated.
+    never runs ungated. ``ignore_bypass``: --yolo and ``approvals.mode: off`` do not apply (an
+    action the user asked to be prompted for every time, e.g. computer_use captures).
     Unattended deny text is ``ctx.block_message(subject, noun, advice)`` unless the caller passes
     an explicit ``*_deny_message`` (the file-tool write gates word their own).
     """
@@ -964,7 +966,7 @@ def _run_approval_gate(
     # ``approvals.mode: off`` is the third bypass source (the Desktop "Approvals: off" toggle writes it); the shell
     # guards honour it, so every action routed through this gate (computer_use, plugin rules, SSH-config writes,
     # dangerous-pattern prompts) must too, or "off" still prompts on those surfaces.
-    if _yolo_active() or approval_context._get_approval_mode() == "off":
+    if not ignore_bypass and (_yolo_active() or approval_context._get_approval_mode() == "off"):
         return _approved()
     session_key = get_current_session_key()
     if is_approved(session_key, pattern_key):

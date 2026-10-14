@@ -334,7 +334,8 @@ def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
     if (err := _reject_unsafe(action, args)) is not None:
         return err
     scopes = ([action] if action in _ACTIONS and _ACTIONS[action].destructive else []) + (
-        ["bring_to_front"] if args.get("bring_to_front") or (action == "focus_app" and args.get("raise_window")) else [])
+        ["bring_to_front"] if args.get("bring_to_front") or (action == "focus_app" and args.get("raise_window")) else []) + (
+        ["capture"] if _capture_needs_approval(action, args) else [])
     for scope in scopes:
         if (err := _request_approval(scope, args)) is not None:
             return err
@@ -377,6 +378,18 @@ def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
         logger.exception("computer_use %s failed", action)
         return json.dumps({"error": f"{action} failed: {e}"})
 
+def capture_approval_enabled() -> bool:
+    """``computer_use.capture_approval``: every screen capture asks the user first."""
+    with contextlib.suppress(Exception):
+        from hermes_cli.config import load_config
+        return bool(((load_config() or {}).get("computer_use") or {}).get("capture_approval"))
+    return False
+
+def _capture_needs_approval(action: str, args: dict[str, Any]) -> bool:
+    """A `capture`, or an input action's `capture_after` screenshot, when capture_approval is on."""
+    return (action == "capture" or (bool(args.get("capture_after")) and action in _INPUT_ACTIONS)) \
+        and capture_approval_enabled()
+
 def _request_approval(action: str, args: dict[str, Any]) -> Optional[str]:
     """None if approved, else a JSON error string. The decision (yolo bypass, session/permanent grants, CLI prompt,
     gateway pending, cron/unattended policy, fail-closed with nobody to ask) is ``tools.approval``'s shared gate,
@@ -385,17 +398,21 @@ def _request_approval(action: str, args: dict[str, Any]) -> Optional[str]:
     """
     from tools.approval import _run_approval_gate
 
-    mode = "foreground" if args.get("delivery_mode") == "foreground" else "background"
-    description = f"Allow computer_use to perform `{action}`?"
+    is_capture = action == "capture"
+    mode = "screen" if is_capture else ("foreground" if args.get("delivery_mode") == "foreground" else "background")
+    description = ("Allow computer_use to capture the screen?" if is_capture
+                   else f"Allow computer_use to perform `{action}`?")
     result = _run_approval_gate(
         pattern_key=f"cua:{action}:{mode}", description=description,
-        display_target=f"computer_use: {_summarize_action(action, args)}", approval_callback=_approval_callback,
+        display_target=(f"computer_use: capture {args.get('app') or 'the screen'}" if is_capture
+                        else f"computer_use: {_summarize_action(action, args)}"), approval_callback=_approval_callback,
         subject=f"computer_use `{action}` requires approval", noun="desktop actions",
         advice="Find an alternative approach that avoids driving the desktop.",
         autoapprove_log_prefix="computer_use action in non-interactive non-gateway context",
         fail_closed_when_no_human=True,
         no_human_block_message=(f"BLOCKED: computer_use `{action}` requires approval but no interactive user or "
                                 "gateway is present to approve it."),
+        ignore_bypass=is_capture,
     )
     if result.get("approved"):
         return None
