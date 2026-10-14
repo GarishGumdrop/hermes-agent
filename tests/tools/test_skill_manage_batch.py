@@ -310,5 +310,43 @@ class TestSkillManageBatch(unittest.TestCase):
         self.assertEqual(out["operations_applied"], 2)
 
 
+class TestSkillEditApprovalSwitch(unittest.TestCase):
+    """skills.write_approval (create/delete) and skills.write_approval_edits (edits) gate
+    independently; an unset edits switch follows write_approval."""
+
+    def _key(self, cfg, actions):
+        import tools.write_approval as wa
+        with patch("hermes_cli.config.load_config", return_value={"skills": cfg}):
+            return wa.skill_gate_key(actions)
+
+    def test_unset_edits_switch_follows_write_approval(self):
+        self.assertEqual(self._key({"write_approval": True}, ["patch"]), "write_approval")
+        self.assertEqual(self._key({"write_approval": True}, ["create"]), "write_approval")
+        self.assertIsNone(self._key({"write_approval": False}, ["patch"]))
+        self.assertIsNone(self._key({}, ["create"]))
+
+    def test_new_skills_only(self):
+        cfg = {"write_approval": True, "write_approval_edits": False}
+        self.assertEqual(self._key(cfg, ["create", "write_file"]), "write_approval")
+        self.assertEqual(self._key(cfg, ["delete"]), "write_approval")
+        self.assertIsNone(self._key(cfg, ["patch", "write_file"]))
+        self.assertIsNone(self._key(cfg, ["remove_file"]))
+
+    def test_edits_only(self):
+        cfg = {"write_approval": False, "write_approval_edits": True}
+        self.assertIsNone(self._key(cfg, ["create"]))
+        self.assertEqual(self._key(cfg, ["patch"]), "write_approval_edits")
+        self.assertEqual(self._key(cfg, ["create", "patch"]), "write_approval_edits")
+
+    def test_evaluate_gate_stages_with_the_right_key(self):
+        import tools.write_approval as wa
+        cfg = {"skills": {"write_approval": True, "write_approval_edits": False}}
+        with patch("hermes_cli.config.load_config", return_value=cfg):
+            self.assertTrue(wa.evaluate_gate(wa.SKILLS, skill_actions=["patch"]).allow)
+            d = wa.evaluate_gate(wa.SKILLS, skill_actions=["create"])
+        self.assertTrue(d.stage)
+        self.assertIn("skills.write_approval is on", d.message)
+
+
 if __name__ == "__main__":
     unittest.main()

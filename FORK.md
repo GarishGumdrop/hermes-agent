@@ -53,3 +53,25 @@ clash using this file as the statement of what each fork change is for.
 - **Purpose:** the user has weak eyesight. The stylesheet raises text contrast
   and removes faint grey text in the light theme. It must load after the app's
   own styles so it wins.
+
+
+### 4. Separate approval switch for edits to existing skills
+
+- **Files:** `tools/write_approval.py` (`EDITS_CONFIG_KEY`, `skill_edit_approval_enabled`,
+  `skill_review_enabled`, `skill_gate_key`, the `skill_actions` branch of
+  `evaluate_gate`); `tools/skill_manager_tool.py` (`_run_write_gate` takes the
+  write's actions); one argument in `tools/skill_manager_batch.py`; the
+  `/skills` state line in `hermes_cli/write_approval_commands.py`; the gate-off
+  checks in `gateway/slash_commands.py` and `tui_gateway/methods_tools.py`;
+  docs in `website/docs/user-guide/features/skills.md` and `configuration.md`;
+  tests in `tests/tools/test_skill_manage_batch.py`.
+- **Purpose:** `skills.write_approval` holds writes that create or delete a
+  skill; the new `skills.write_approval_edits` holds edits to existing skills.
+  Unset, the edits switch follows `write_approval`, so standard behaviour is
+  unchanged. The user runs `write_approval: true`, `write_approval_edits:
+  false`: he reviews only new skills, which show what Hermes thinks is worth a
+  skill, and is not shown technical revisions.
+- **If it breaks:** upstream probably changed how the skill gate is called.
+  Keep the rule: a skill write is held only if one of its actions falls under a
+  switch that is on (create/delete → `write_approval`, everything else →
+  `write_approval_edits`).

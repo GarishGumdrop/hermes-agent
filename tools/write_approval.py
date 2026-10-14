@@ -7,6 +7,11 @@ origin (**foreground** turn or **background_review** fork). ``false`` (default)
 writes freely; ``true`` never commits directly: it prompts inline (memory,
 interactive CLI only) or **stages** the write under
 ``<HERMES_HOME>/pending/{memory,skills}/<id>.json`` for out-of-band review.
+
+Skills have a second switch, ``skills.write_approval_edits``, for writes that change an
+existing skill (patch / edit / write_file / remove_file). ``skills.write_approval`` then
+covers the writes that change which skills exist (create / delete). Unset, the edits switch
+follows ``skills.write_approval``, so one switch still gates every skill write.
 """
 
 from __future__ import annotations
@@ -36,6 +41,10 @@ _SUBSYSTEMS = (MEMORY, SKILLS)
 # Per-subsystem config key. Intentionally a single boolean with no "block all writes"
 # state — to disable a subsystem use its own enable flag (e.g. ``memory.memory_enabled``).
 CONFIG_KEY = "write_approval"
+# Skills only: gate for edits to existing skills; unset = follow ``skills.write_approval``.
+EDITS_CONFIG_KEY = "write_approval_edits"
+# Skill writes that change which skills exist; every other action edits an existing skill.
+SKILL_STRUCTURE_ACTIONS = frozenset({"create", "delete"})
 _TRUTHY_STRINGS = frozenset({"on", "true", "yes", "1", "approve", "enabled"})
 
 
@@ -50,6 +59,39 @@ def write_approval_enabled(subsystem: str) -> bool:
         return _normalize_enabled(cfg_get(load_config(), subsystem, CONFIG_KEY, default=False))
     except Exception:
         return False
+
+
+def _skill_edits_setting() -> Any:
+    """Raw ``skills.write_approval_edits`` value; None when unset."""
+    try:
+        from hermes_cli.config import load_config, cfg_get
+        return cfg_get(load_config(), SKILLS, EDITS_CONFIG_KEY, default=None)
+    except Exception:
+        return None
+
+
+def skill_edit_approval_enabled() -> bool:
+    """Read ``skills.write_approval_edits``; unset follows ``skills.write_approval``."""
+    value = _skill_edits_setting()
+    return write_approval_enabled(SKILLS) if value is None else _normalize_enabled(value)
+
+
+def skill_review_enabled() -> bool:
+    """Whether any skill write is gated (either switch on): drives the /skills review surfaces."""
+    return write_approval_enabled(SKILLS) or skill_edit_approval_enabled()
+
+
+def skill_gate_key(actions) -> Optional[str]:
+    """Config key that holds a skill write with these ``actions`` for approval, or None when
+    neither applicable switch is on. Structure changes are checked first, so a batch that
+    creates one skill and edits another is reported under ``write_approval``."""
+    acts = {str(a) for a in actions or ()}
+    if acts & SKILL_STRUCTURE_ACTIONS and write_approval_enabled(SKILLS):
+        return CONFIG_KEY
+    if acts - SKILL_STRUCTURE_ACTIONS and skill_edit_approval_enabled():
+        # Name the switch the user actually set: unset, edits follow write_approval.
+        return CONFIG_KEY if _skill_edits_setting() is None else EDITS_CONFIG_KEY
+    return None
 
 
 def _normalize_enabled(value: Any) -> bool:
@@ -187,22 +229,29 @@ def _slash_review_surface() -> bool:
     return platform not in {"webhook", "msgraph_webhook", "api_server"}
 
 
-def _staged(subsystem: str) -> GateDecision:
+def _staged(subsystem: str, key: str = CONFIG_KEY) -> GateDecision:
     command = f"/{subsystem} pending"
     if _slash_review_surface():
         where = f"review with {command}"
     else:
         where = (f"pending records live in {_pending_path(subsystem, '').parent} "
                  f"(review from an interactive CLI session with {command})")
-    return GateDecision(stage=True, message=(f"Staged for approval ({subsystem}.write_approval is on). "
+    return GateDecision(stage=True, message=(f"Staged for approval ({subsystem}.{key} is on). "
                                              f"Not yet saved — {where}."))
 
 
-def evaluate_gate(subsystem: str, *, inline_summary: str = "", inline_detail: str = "") -> GateDecision:
+def evaluate_gate(subsystem: str, *, inline_summary: str = "", inline_detail: str = "",
+                  skill_actions=None) -> GateDecision:
     """Decide what to do with a pending write: gate off → allow; gate on + skills (any origin) or
     background → stage; gate on + memory + foreground → inline prompt when an interactive channel
     exists, else stage. The gate only ever delays a write, never silently refuses it; ``blocked``
-    is produced only when the user actively denies the inline prompt."""
+    is produced only when the user actively denies the inline prompt. For skills, pass the write's
+    ``skill_actions`` so creations/deletions and edits follow their own switches (see
+    ``skill_gate_key``); without them only ``skills.write_approval`` is consulted."""
+    if subsystem == SKILLS and skill_actions is not None:
+        key = skill_gate_key(skill_actions)
+        # Skills are too big to review inline, so a gated skill write always stages.
+        return GateDecision(allow=True) if key is None else _staged(SKILLS, key)
     if not write_approval_enabled(subsystem):
         return GateDecision(allow=True)
     # Skills are too big to review inline; a background write runs in a daemon thread with no user.

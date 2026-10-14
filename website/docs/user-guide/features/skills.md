@@ -676,10 +676,23 @@ wanting eyes on the self-improvement loop), turn on the write-approval gate:
 ```yaml
 skills:
   write_approval: false     # false = write freely (default) | true = require approval
+  # write_approval_edits:   # optional: separate switch for edits to existing skills
 ```
 
-When `write_approval: true`, every `skill_manage` write (create / edit /
-patch / delete / write_file / remove_file) is **staged** instead of committed —
+`write_approval` covers every skill write unless `write_approval_edits` is set.
+Set it to split the two: `write_approval` then covers writes that change
+**which** skills exist (create / delete), and `write_approval_edits` covers
+changes to an existing skill (edit / patch / write_file / remove_file). For
+example, to review only new skills while the agent keeps refining existing
+ones freely:
+
+```yaml
+skills:
+  write_approval: true
+  write_approval_edits: false
+```
+
+When a write is gated, it is **staged** instead of committed —
 a SKILL.md is too large to review inline, so staging applies regardless of
 whether the write came from a foreground turn or the background review.
 Staged writes survive restarts under `~/.hermes/pending/skills/` and are

@@ -11,7 +11,11 @@ from tools import write_approval as wa
 
 def _fmt_state(subsystem: str) -> str:
     on = wa.write_approval_enabled(subsystem)
-    return f"{subsystem}.write_approval = {'on' if on else 'off'}"
+    state = f"{subsystem}.write_approval = {'on' if on else 'off'}"
+    if subsystem == wa.SKILLS:
+        edits = wa.skill_edit_approval_enabled()
+        state += f", skills.write_approval_edits = {'on' if edits else 'off'}"
+    return state
 
 
 def _fmt_pending_list(subsystem: str) -> str:
