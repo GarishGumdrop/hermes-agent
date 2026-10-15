@@ -278,6 +278,67 @@ def _bot_relay_outbox_sig():
     return _bot_relay_outbox_seen or None
 
 
+# Fork (FORK.md change 10): skills.changed — the slash menu follows the skills and plugins on disk.
+_skills_ext_cache: dict = {}
+
+
+def _skills_external_dirs(root: Path) -> list:
+    """``skills.external_dirs`` from ``root``'s config.yaml, re-read only when that file moves."""
+    import os
+    cfg = root / "config.yaml"
+    mtime = _watcher_mtime_ns(cfg)
+    cached = _skills_ext_cache.get(root)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    dirs: list = []
+    with contextlib.suppress(Exception):
+        import yaml
+        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+        raw = ((data.get("skills") or {}).get("external_dirs")) or []
+        for entry in [raw] if isinstance(raw, str) else raw:
+            if isinstance(entry, str) and entry.strip():
+                dirs.append(Path(os.path.expandvars(os.path.expanduser(entry.strip()))))
+    _skills_ext_cache[root] = (mtime, dirs)
+    return dirs
+
+
+def _skills_tree_sig(base: Path, depth: int = 3) -> tuple:
+    """(dirs, SKILL.md count, newest mtime) over the top ``depth`` levels of a skills tree: adding,
+    removing or renaming a skill moves a directory mtime; editing one moves its SKILL.md."""
+    import os
+    newest, dirs, skills = 0, 0, 0
+    stack = [(str(base), 0)]
+    while stack:
+        path, level = stack.pop()
+        with contextlib.suppress(OSError):
+            with os.scandir(path) as it:
+                for entry in it:
+                    with contextlib.suppress(OSError):
+                        if entry.is_dir(follow_symlinks=True):
+                            if level < depth and not entry.name.startswith((".", "_", "node_modules")):
+                                dirs += 1
+                                newest = max(newest, entry.stat().st_mtime_ns)
+                                stack.append((entry.path, level + 1))
+                        elif entry.name == "SKILL.md":
+                            skills += 1
+                            newest = max(newest, entry.stat().st_mtime_ns)
+    return (dirs, skills, newest, _watcher_mtime_ns(base))
+
+
+def _skills_sig():
+    """Everything the slash menu is built from, for the watcher home and every served profile:
+    skills dirs (own + external_dirs), plugin dirs, and config.yaml (disabled skills, quick
+    commands, enabled plugins). An install by any route — terminal, git, another app — moves it."""
+    sig = []
+    for root in (_watcher_home(), *_served_profile_homes):
+        root = Path(root)
+        sig.append(_watcher_mtime_ns(root / "config.yaml"))
+        for base in (root / "skills", *_skills_external_dirs(root)):
+            sig.append(_skills_tree_sig(base))
+        sig.append(_skills_tree_sig(root / "plugins", depth=1))
+    return tuple(sig)
+
+
 # event → (check interval, signature fn, payload fn). Signatures are stat-cheap; the interval
 # keeps pricier probes (pet resolves the sheet off disk) off the 0.5s tick. cron/jobs.json
 # moves on edits AND scheduler ticks; gateway_state.json is where the messaging gateway
@@ -292,6 +353,8 @@ _CHANGE_WATCHES: dict[str, tuple[float, Any, Any]] = {
     "platforms.changed": (2.0, lambda: _home_mtime_ns("gateway_state.json"), dict),
     "projects.changed": (2.0, _projects_sig, dict),
     "pairing.changed": (2.0, _pairing_sig, dict),
+    # Fork (FORK.md change 10): the desktop drops its cached slash menu on this.
+    "skills.changed": (2.0, _skills_sig, dict),
     # 1s so a queued DM envelope reaches the Desktop's push-triggered drain fast.
     "bot_relay.outbox.pending": (1.0, _bot_relay_outbox_sig, dict)}
 

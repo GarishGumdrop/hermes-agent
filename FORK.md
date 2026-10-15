@@ -137,3 +137,22 @@ clash using this file as the statement of what each fork change is for.
   `hermes chat` and the TUI pass. The nightly update's model sessions run this way and must not
   receive the user's personal rules, which are written for conversations with him.
 - **If it breaks:** keep the one-shot agent built with the same skip switches as the interactive chat.
+
+### 10. The slash menu updates when skills or plugins change on disk
+
+- **Files:** `tui_gateway/change_watcher.py` (`_skills_sig` and helpers, one `skills.changed` row in
+  `_CHANGE_WATCHES`); `tui_gateway/contracts/events.py` (one `event(...)` line) and the two files
+  regenerated from it by `scripts/gen_gateway_contracts.py`
+  (`apps/shared/src/gateway-contract.generated.ts`, `.openrpc.json`);
+  `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/lifecycle.ts` (a
+  `skills.changed` branch and two imports); tests in `tests/tui_gateway/test_fork_skills_changed.py`.
+- **Purpose:** the desktop caches the slash-command list for an hour and refreshes it only when a
+  skill changes through the app itself (Capabilities, the hub, the `skill_manage` tool). A skill
+  installed any other way, e.g. by the agent with curl or git, stayed missing from the `/` menu
+  until the app restarted. The backend's change watcher now fingerprints every skills folder
+  (own and `skills.external_dirs`, for the active and every served profile), the plugins folder
+  and config.yaml every 2 seconds, and broadcasts `skills.changed` when that moves; the desktop
+  drops its cached slash list on it. The user requires the menu to follow the available commands
+  without a restart.
+- **If it breaks:** keep a watcher-side signal over the skill/plugin folders and config, and a
+  desktop handler that calls `invalidateSlashCompletions()` on it.

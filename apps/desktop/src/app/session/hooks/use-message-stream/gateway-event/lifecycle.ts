@@ -2,6 +2,7 @@ import type { GatewayEvent } from '@hermes/shared'
 import type { HermesSkin } from '@hermes/shared/skin'
 
 import { invalidateContextBreakdown } from '@/app/shell/hooks/use-context-breakdown'
+import { invalidateSlashCompletions } from '@/lib/slash-completion-cache'
 import { clearClarifyRequest } from '@/store/clarify'
 import {
   noteGatewayReady,
@@ -18,6 +19,7 @@ import {
 import { clearAllPrompts, clearApprovalRequest } from '@/store/prompts'
 import { markRuntimeGone } from '@/store/runtime-gone'
 import { dropSessionState, unbindTileRuntime } from '@/store/session-states'
+import { invalidateSkillSuggestionIndex } from '@/store/suggestion-providers/skill'
 // Leaf import (not the `@/themes` barrel) to avoid pulling the ThemeProvider
 // module graph into the gateway event hot path.
 import { ingestBackendSkin } from '@/themes/backend-sync'
@@ -67,6 +69,17 @@ export function handleLifecycleEvent(ctx: GatewayEventContext): boolean {
     if (fromActiveSource()) {
       ingestBackendSkin(payload as HermesSkin | undefined, { apply: true })
     }
+
+    return true
+  }
+
+  if (event.type === 'skills.changed') {
+    // Fork (FORK.md change 10): skills, plugins or config moved on disk (any
+    // route, including a terminal install). Drop the cached slash menu for
+    // every profile so `/` lists what exists now. Not gated on the active
+    // source: the cache is keyed per session/profile and refetches lazily.
+    invalidateSlashCompletions()
+    invalidateSkillSuggestionIndex()
 
     return true
   }

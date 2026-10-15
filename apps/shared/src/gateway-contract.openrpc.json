@@ -41760,6 +41760,18 @@
       ]
     },
     {
+      "name": "skills.changed",
+      "summary": "Skills, plugins or config moved; drop the cached slash menu.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ChangeSignalPayload"
+          }
+        }
+      ]
+    },
+    {
       "name": "skin.changed",
       "summary": "The active skin moved (name switch or live colour edit); repaint from this palette.",
       "params": [
