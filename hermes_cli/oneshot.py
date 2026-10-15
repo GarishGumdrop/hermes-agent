@@ -569,6 +569,8 @@ def _run_agent(
     ensure_mcp_discovery_before_agent_build(logger=logging.getLogger(__name__), single_query=True)
 
     skills_prompt = _build_preloaded_skills_prompt(skills)
+    from utils import is_truthy_value
+    _ignore_rules = is_truthy_value(os.environ.get("HERMES_IGNORE_RULES"))
 
     # The try spans agent construction (not just ``chat``) so the store is always closed, even when
     # ``AIAgent(...)`` raises — the one-shot exit path hard-exits via os._exit and skips finalizers.
@@ -592,6 +594,10 @@ def _run_agent(
             request_overrides=runtime.get("request_overrides"),
             ephemeral_system_prompt=skills_prompt,
             reasoning_config=reasoning_config,
+            # --ignore-rules / --safe-mode, as in `hermes chat` (cli_agent_setup_mixin) and the TUI:
+            # no SOUL.md, AGENTS.md or memory in the prompt.
+            skip_context_files=_ignore_rules,
+            skip_memory=_ignore_rules,
             # The only interactive callback wired: no user sits at a terminal. Sudo prompts gate on
             # HERMES_INTERACTIVE (never set), hook approval via HERMES_ACCEPT_HOOKS=1, dangerous
             # commands via HERMES_YOLO_MODE=1, skill secret capture degrades gracefully.

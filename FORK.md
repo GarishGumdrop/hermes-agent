@@ -127,3 +127,13 @@ clash using this file as the statement of what each fork change is for.
   a folder that does not exist, and repeated the wrong path to the user.
 - **If it breaks:** keep a backslash in whatever set of characters marks "this is part of a path,
   do not rewrite".
+
+### 9. One-shot chats honour `--ignore-rules` and `--safe-mode`
+
+- **Files:** `hermes_cli/oneshot.py` (`_run_agent`: `skip_context_files` / `skip_memory` passed to
+  `AIAgent` from `HERMES_IGNORE_RULES`); tests in `tests/hermes_cli/test_fork_oneshot_ignore_rules.py`.
+- **Purpose:** `hermes chat --oneshot --ignore-rules` (or `--safe-mode`) still loaded SOUL.md, the
+  user profile and memory, because the one-shot path builds its agent without the two switches that
+  `hermes chat` and the TUI pass. The nightly update's model sessions run this way and must not
+  receive the user's personal rules, which are written for conversations with him.
+- **If it breaks:** keep the one-shot agent built with the same skip switches as the interactive chat.
