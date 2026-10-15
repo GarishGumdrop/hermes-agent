@@ -145,14 +145,24 @@ const SETTINGS: Record<string, SettingSpec> = {
     }
   },
   // Appearance > Chat display
-  userBubbleTransparency: num('Your message bubble transparency', 0, 100, $userBubbleTransparency, setUserBubbleTransparency),
+  userBubbleTransparency: num(
+    'Your message bubble transparency',
+    0,
+    100,
+    $userBubbleTransparency,
+    setUserBubbleTransparency
+  ),
   textDirection: choice('Text direction', ['auto', 'ltr', 'rtl'] as const, $textDirection, setTextDirection),
   hideThreadTimeline: bool('Hide the conversation timeline rail', $hideThreadTimeline, setHideThreadTimeline),
   reactions: bool('Emoji reactions', $reactionsEnabled, setReactionsEnabled),
   vibeHearts: bool('Vibe hearts', $vibeHeartsEnabled, setVibeHeartsEnabled),
   toolView: choice('Tool display', ['product', 'technical'] as const, $toolViewMode, setToolViewMode),
   hideCodeDiffs: bool('Hide code diffs', $hideCodeDiffs, setHideCodeDiffs),
-  reasoningCollapsed: bool('Collapse reasoning by default', $reasoningCollapsedByDefault, setReasoningCollapsedByDefault),
+  reasoningCollapsed: bool(
+    'Collapse reasoning by default',
+    $reasoningCollapsedByDefault,
+    setReasoningCollapsedByDefault
+  ),
   embeds: choice('External embeds (videos, posts)', ['always', 'ask', 'off'] as const, $embedMode, setEmbedMode),
   alwaysExternalLinks: bool('Open links in the system browser', $alwaysExternalLinks, setAlwaysExternalLinks),
   // Chat
