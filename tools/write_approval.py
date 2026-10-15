@@ -113,7 +113,8 @@ def _pending_files(subsystem: str) -> list:
     return list(d.glob("*.json")) if d.exists() else []
 
 
-def stage_write(subsystem: str, payload: dict[str, Any], *, summary: str, origin: str) -> dict[str, Any]:
+def stage_write(subsystem: str, payload: dict[str, Any], *, summary: str, origin: str,
+                plain_summary: str = "") -> dict[str, Any]:
     """Persist a pending write and return its record (``id`` + metadata). ``payload`` is the exact
     kwargs to replay the write on approval; ``origin`` is ``foreground`` or ``background_review``.
     Best-effort: on disk failure it logs and still returns a record — the write is lost, which is
@@ -124,6 +125,8 @@ def stage_write(subsystem: str, payload: dict[str, Any], *, summary: str, origin
         "summary": (summary or "").strip(), "origin": origin or "foreground",
         "created_at": time.time(), "payload": payload,
     }
+    if plain_summary:
+        record["plain_summary"] = plain_summary.strip()
     try:
         atomic_json_write(_pending_path(subsystem, pid), record)
     except Exception as e:  # pragma: no cover - disk failure path
@@ -300,7 +303,7 @@ def _prompt_inline_memory_approval(summary: str, detail: str) -> Optional[bool]:
 # --- Skill-specific helpers (gist + diff for the review affordances) ---
 
 _GIST_TEMPLATES = {"write_file": "write {file_path} in '{name}'", "remove_file": "remove {file_path} from '{name}'",
-                   "delete": "delete skill '{name}'"}
+                   "delete": "delete skill '{name}'", "archive": "archive skill '{name}'"}
 
 
 def skill_gist(action: str, name: str, *, content: str = "", file_path: str = "",

@@ -143,6 +143,63 @@ def get_archive_after_days() -> int:
     return _bounded_count("archive_after_days", DEFAULT_ARCHIVE_AFTER_DAYS)
 
 
+def archive_approval_enabled() -> bool:
+    return bool(_load_config().get("archive_approval", False))
+
+
+# --- Archive proposals (curator.archive_approval) ---
+# name -> pending id of the staged archive. A proposal whose pending record is gone while the skill
+# is still present was rejected by the user: pin the skill so it is kept and never proposed again.
+
+def _proposals_file() -> Path:
+    return get_hermes_home() / "skills" / ".curator_archive_proposals.json"
+
+
+def _load_proposals() -> dict[str, str]:
+    try:
+        data = json.loads(_proposals_file().read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_proposals(proposals: dict[str, str]) -> None:
+    try:
+        from utils import atomic_json_write
+        atomic_json_write(_proposals_file(), proposals)
+    except Exception as e:
+        logger.warning("Curator could not save archive proposals: %s", e)
+
+
+def _settle_proposals(_u, proposals: dict[str, str], counts: dict[str, int]) -> None:
+    from tools import write_approval as wa
+    for name, pid in list(proposals.items()):
+        if wa.get_pending(wa.SKILLS, pid) is not None:
+            continue  # still waiting for the user
+        del proposals[name]
+        if _u._find_skill_dir(name) is not None:  # rejected: keep it for good
+            if _u.set_pinned(name, True):
+                counts["kept"] += 1
+
+
+def _propose_archive(name: str, anchor: datetime, now: datetime, proposals: dict[str, str]) -> bool:
+    from tools import write_approval as wa
+    if name in proposals:
+        return False
+    days = max(1, (now - anchor).days)
+    rec = wa.stage_write(
+        wa.SKILLS, {"action": "archive", "name": name}, summary=f"archive skill '{name}'",
+        origin="curator",
+        plain_summary=(
+            f"The skill '{name}' has not been used for {days} days, so it is probably no longer needed. "
+            f"Approving moves it to the archive: it leaves the skill list every conversation carries, "
+            f"and `hermes curator restore {name}` brings it back. Rejecting keeps it, and this will not "
+            f"be asked again."),
+    )
+    proposals[name] = rec["id"]
+    return True
+
+
 def get_consolidate() -> bool:
     """LLM consolidation pass — OFF by default (prune only, no aux-model fork); ``hermes curator run --consolidate`` overrides per invocation."""
     return bool(_load_config().get("consolidate", DEFAULT_CONSOLIDATE))
@@ -219,6 +276,11 @@ def apply_automatic_transitions(now: Optional[datetime] = None) -> dict[str, int
     # job fires, so paused/rare jobs would age them out). Treat as pinned.
     protected = _cron_referenced_skills()
     counts = {"marked_stale": 0, "archived": 0, "reactivated": 0, "checked": 0, "seeded": 0}
+    approval = archive_approval_enabled()
+    proposals = _load_proposals() if approval else {}
+    if approval:
+        counts.update(proposed=0, kept=0)
+        _settle_proposals(_u, proposals, counts)
 
     def _set(name: str, state: str, key: str) -> None:
         _u.set_state(name, state)
@@ -252,12 +314,19 @@ def apply_automatic_transitions(now: Optional[datetime] = None) -> dict[str, int
                 _set(name, _u.STATE_ACTIVE, "reactivated")
             continue
         if anchor <= archive_cutoff and current != _u.STATE_ARCHIVED:
-            if _archive_as_curator(_u, name):
+            if approval:
+                if _propose_archive(name, anchor, now, proposals):
+                    counts["proposed"] += 1
+                if current == _u.STATE_ACTIVE:
+                    _u.set_state(name, _u.STATE_STALE)
+            elif _archive_as_curator(_u, name):
                 counts["archived"] += 1
         elif anchor <= stale_cutoff and current == _u.STATE_ACTIVE:
             _set(name, _u.STATE_STALE, "marked_stale")
         elif anchor > stale_cutoff and current == _u.STATE_STALE:
             _set(name, _u.STATE_ACTIVE, "reactivated")  # used again after going stale
+    if approval:
+        _save_proposals(proposals)
     return counts
 
 

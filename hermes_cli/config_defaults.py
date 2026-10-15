@@ -1508,6 +1508,10 @@ DEFAULT_CONFIG = {
         "min_idle_hours": 2,  # only run after the agent has been idle this long
         "stale_after_days": 14,  # mark "stale" after this many unused days
         "archive_after_days": 30,  # move to skills/.archive/ (recoverable) after this many
+        # true = instead of archiving on its own, the curator stages each archive as a pending skill
+        # write (with its reason) for the user to approve; a rejected proposal pins the skill (kept,
+        # never proposed again). Only the automatic inactivity archive is affected.
+        "archive_approval": False,
         # LLM consolidation (umbrella-building) pass. OFF = deterministic inactivity prune only, no
         # aux-model cost. `hermes curator run --consolidate` overrides once.
         "consolidate": False,

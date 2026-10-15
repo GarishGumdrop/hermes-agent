@@ -745,7 +745,15 @@ _ACTION_HANDLERS = {
     "patch": _act_patch,
     "delete": lambda a: _delete_skill(a["name"], absorbed_into=a["absorbed_into"]),
     "write_file": lambda a: _write_file(a["name"], a["file_path"], a["file_content"]),
-    "remove_file": lambda a: _remove_file(a["name"], a["file_path"])}
+    "remove_file": lambda a: _remove_file(a["name"], a["file_path"]),
+    # Not in the tool schema: replayed from a curator archive proposal the user approved.
+    "archive": lambda a: _archive_approved(a["name"])}
+
+
+def _archive_approved(name: str) -> dict[str, Any]:
+    from tools.skill_usage import archive_skill
+    ok, message = archive_skill(name)
+    return {"success": ok, "message": message} if ok else _err(message)
 
 
 def _record_success(action, name, result, *, file_path, absorbed_into, task_id,
