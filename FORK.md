@@ -116,3 +116,14 @@ clash using this file as the statement of what each fork change is for.
   something that then fails. The tool description states the real limit.
 - **If it breaks:** keep the limit read from config in one function, and the create checks running
   before a skill write is staged.
+
+### 8. Subscription-login name rewrite leaves Windows paths alone
+
+- **Files:** `agent/anthropic_adapter.py` (`_OAUTH_SLUG_PATTERN`: a backslash added to both
+  character classes, plus one comment line); tests in `tests/agent/test_fork_oauth_slug_backslash.py`.
+- **Purpose:** on a Claude subscription login, Hermes rewrites the word "hermes-agent" to
+  "claude-code" in the model's instructions. Upstream skips paths written with `/` but not Windows
+  paths written with `\`, so the model read `...\hermes\hermes-agent` as `...\hermes\claude-code`,
+  a folder that does not exist, and repeated the wrong path to the user.
+- **If it breaks:** keep a backslash in whatever set of characters marks "this is part of a path,
+  do not rewrite".
