@@ -408,7 +408,7 @@ def _skills_tree_sig(base: Path, depth: int = 3) -> tuple:
     return (dirs, skills, newest, _watcher_mtime_ns(base))
 
 
-def _fork_skills_sig():
+def _skills_sig():
     """Everything the slash menu is built from, for the watcher home and every served profile:
     skills dirs (own + external_dirs), plugin dirs, and config.yaml (disabled skills, quick
     commands, enabled plugins). An install by any route — terminal, git, another app — moves it."""
@@ -420,18 +420,6 @@ def _fork_skills_sig():
             sig.append(_skills_tree_sig(base))
         sig.append(_skills_tree_sig(root / "plugins", depth=1))
     return tuple(sig)
-
-
-def _skills_sig():
-    """The skill roots' stat signature for every scope a session resolved commands in (each profile
-    home and session repo, not only the launch one: ``agent.skill_commands.published_scopes_signature``):
-    a skill installed or removed from another terminal (``hermes skills install``, a dropped SKILL.md,
-    nested under a category) moves it, and attached clients refetch ``commands.catalog`` from this
-    gateway instead of rescanning disk."""
-    from agent.skill_commands import published_scopes_signature
-    # Fork (FORK.md change 10): plus the plugin dirs, config.yaml and served profiles the desktop
-    # slash menu is built from.
-    return (published_scopes_signature(), _fork_skills_sig())
 
 
 # event → (check interval, signature fn, payload fn). Signatures are stat-cheap; the interval

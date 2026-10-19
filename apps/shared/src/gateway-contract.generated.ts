@@ -7006,7 +7006,7 @@ export interface BackendGatewayEventMap {
   'sessions.changed': ChangeSignalPayload
   /** The free-tier bootstrap finished (broadcast); the desktop's setup gate reads the record. */
   'setup.ready': SetupReadyPayload
-  /** A skill root, plugins or config moved (installed/removed elsewhere); refetch commands.catalog from the gateway and drop the cached slash menu. */
+  /** Skills, plugins or config moved; drop the cached slash menu. */
   'skills.changed': ChangeSignalPayload
   /** The active skin moved (name switch or live colour edit); repaint from this palette. */
   'skin.changed': SkinPayload

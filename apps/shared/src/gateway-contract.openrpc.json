@@ -48694,7 +48694,7 @@
     },
     {
       "name": "skills.changed",
-      "summary": "A skill root, plugins or config moved (installed/removed elsewhere); refetch commands.catalog from the gateway and drop the cached slash menu.",
+      "summary": "Skills, plugins or config moved; drop the cached slash menu.",
       "params": [
         {
           "name": "payload",

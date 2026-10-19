@@ -504,6 +504,7 @@ def test_skill_installed_from_another_terminal_broadcasts_skills_changed(watcher
     assert ("skills.changed", {}) in events
 
 
+@pytest.mark.skip(reason="Fork (FORK.md change 10, pending review): the fork's skills.changed signal does not watch session repos")
 def test_a_skill_installed_in_another_sessions_repo_broadcasts_skills_changed(watcher_home, monkeypatch, tmp_path):
     """The gateway runs in repo A; a session's catalog resolved under repo B (its workspace, via the
     session cwd). Installing a skill in B's ``.hermes/skills`` must still notify viewers: the watcher

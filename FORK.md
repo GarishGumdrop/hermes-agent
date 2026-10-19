@@ -1,19 +1,20 @@
 # FORK.md — what this fork changes and why
 
-This is GarishGumdrop's fork of NousResearch/hermes-agent. The nightly update
-(`X:\Projects\hermes-fork-sync\nightly.ps1`) combines NousResearch's latest
-`main` with this fork every night. When the two clash, a model resolves the
-clash using this file as the statement of what each fork change is for.
+This is GarishGumdrop's fork of NousResearch/hermes-agent. Every night `scripts/fork_sync.py`
+(change 11) merges NousResearch's latest `main` into this fork and reviews the NousResearch commits
+that meet one of the changes below. This file is the list that review works from.
 
-**Rules for resolving a clash**
+**When a NousResearch change meets a fork change**
 
-- Each change below must keep doing what its "Purpose" says after the merge.
-  If NousResearch moved or renamed the code it hooks into, adapt the fork
-  change to the new code; do not drop it.
-- For everything else, prefer NousResearch's version. The fork carries no other
-  intentional differences; anything else that differs is a mistake.
-- Keep fork changes at the edges: new files where possible, the smallest
-  possible edit where core files must be touched.
+- **Same change:** NousResearch's version wins. Remove the fork change and move its entry to
+  "Retired", naming the NousResearch commit that replaced it.
+- **Partial overlap, or the same feature with significantly different behaviour:** keep the fork's
+  version, alone (never both side by side), and move the entry to "Pending review" with the
+  differences. The user decides; until then the fork's version stays.
+- **NousResearch changed code a fork change hooks into:** adapt the fork change to the new code.
+- **Anything else:** NousResearch's version. The fork carries no other intentional differences.
+- Fork changes stay at the edges: new files where possible, the smallest possible edit where core
+  files must be touched.
 
 ## Changes
 
@@ -128,15 +129,19 @@ clash using this file as the statement of what each fork change is for.
 - **If it breaks:** keep a backslash in whatever set of characters marks "this is part of a path,
   do not rewrite".
 
-### 9. One-shot chats honour `--ignore-rules` and `--safe-mode`
+### 11. Nightly merge and review of NousResearch's main
 
-- **Files:** `hermes_cli/oneshot.py` (`_run_agent`: `skip_context_files` / `skip_memory` passed to
-  `AIAgent` from `HERMES_IGNORE_RULES`); tests in `tests/hermes_cli/test_fork_oneshot_ignore_rules.py`.
-- **Purpose:** `hermes chat --oneshot --ignore-rules` (or `--safe-mode`) still loaded SOUL.md, the
-  user profile and memory, because the one-shot path builds its agent without the two switches that
-  `hermes chat` and the TUI pass. The nightly update's model sessions run this way and must not
-  receive the user's personal rules, which are written for conversations with him.
-- **If it breaks:** keep the one-shot agent built with the same skip switches as the interactive chat.
+- **Files:** `scripts/fork_sync.py`, `scripts/fork_sync/triage.md`, `scripts/fork_sync/review.md`
+  (all new). Task Scheduler's "Hermes Auto Update" runs the script with Hermes's venv python.
+- **Purpose:** merges NousResearch's main into the fork; Sonnet reads the new commit titles against
+  this file, the user's plugins and his edited built-in skills; flagged items or git conflicts go to
+  one session on the user's own model, which applies the rules above. The result is pushed, then
+  `hermes update --yes` installs it and the desktop app is reopened if it was open. Each model call's
+  cost goes to `<hermes home>/fork-sync/spend.jsonl`. A failure writes `update-hold.json`.
+- **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat` or `tools/skills_sync.py`
+  changed; adapt the two calls in the script.
+
+## Pending review
 
 ### 10. The slash menu updates when skills or plugins change on disk
 
@@ -156,3 +161,30 @@ clash using this file as the statement of what each fork change is for.
   without a restart.
 - **If it breaks:** keep a watcher-side signal over the skill/plugin folders and config, and a
   desktop handler that calls `invalidateSlashCompletions()` on it.
+- **Differences (NousResearch 20acba0376, merge a03d7d8a08 / commits 6bcf096ef4, 1f8c6134c2, 9de32e7be9):**
+  NousResearch now has its own `skills.changed` broadcast with the same name, used by the terminal
+  TUI to refetch its command list. Their signal (`agent.skill_commands.published_scopes_signature`)
+  watches the skill folders of every profile and project folder a session has looked up commands
+  in, including a project's own `.hermes/skills`. The fork's signal, kept as the only one, also
+  watches the plugins folder and every change to config.yaml (quick commands, plugin switches),
+  and every served profile even before a session has used it, but not project folders. Their
+  version has no Desktop handler; the fork's Desktop handler (drop the cached slash menu) stays.
+  Their test `test_a_skill_installed_in_another_sessions_repo_broadcasts_skills_changed` expects
+  the project-folder watch the fork's signal does not have, so it carries a one-line skip marker
+  naming this entry.
+
+## Retired
+
+### 9. One-shot chats honour `--ignore-rules` and `--safe-mode`
+
+- **Files:** `hermes_cli/oneshot.py` (`_run_agent`: `skip_context_files` / `skip_memory` passed to
+  `AIAgent` from `HERMES_IGNORE_RULES`); tests in `tests/hermes_cli/test_fork_oneshot_ignore_rules.py`.
+- **Purpose:** `hermes chat --oneshot --ignore-rules` (or `--safe-mode`) still loaded SOUL.md, the
+  user profile and memory, because the one-shot path builds its agent without the two switches that
+  `hermes chat` and the TUI pass. The nightly update's model sessions run this way and must not
+  receive the user's personal rules, which are written for conversations with him.
+- **If it breaks:** keep the one-shot agent built with the same skip switches as the interactive chat.
+- **Replaced by:** NousResearch 9b89e41e13 (one-shot chats now run through the gateway, which
+  receives `--ignore-rules` / `--safe-mode` / `HERMES_IGNORE_RULES` and builds the agent without
+  SOUL.md, AGENTS.md and memory). The fork's edit sat in `hermes_cli/oneshot.py`'s in-process path,
+  which `hermes -z` no longer uses; it and its test were removed.
