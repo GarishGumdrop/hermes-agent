@@ -198,7 +198,7 @@ _SESSION_SIGNATURE_FIELDS = (
 )
 # path -> (database/WAL mtime, session-table digest). The mtime guard keeps the
 # normal 0.5 s watch pass stat-only; SQLite is read only after another process
-# actually commits (and for ``_RACY_MTIME_WINDOW_NS`` after it, see _settled_mtime).
+# actually commits (and for ``utils.RACY_MTIME_WINDOW_NS`` after it, see _settled_mtime).
 _sessions_db_sig_cache: dict[str, tuple[object, tuple | None]] = {}
 
 
@@ -264,13 +264,13 @@ def _session_db_content_sig(db_path: Path):
 # SQLite commits in place, so a commit landing in the tick of a read leaves the DB/WAL mtime unchanged.
 # A digest read while the mtime is that fresh must not become a cache hit ("racily clean", as in git's
 # index): it is cached under a key no mtime equals, so the next tick re-reads the rows.
-_RACY_MTIME_WINDOW_NS = 2_000_000_000
 _RACY_MTIME = object()
 
 
 def _settled_mtime(mtime):
     """``mtime`` when it is old enough to trust as a cache key, else a never-matching sentinel."""
-    if mtime is None or time.time_ns() - mtime < _RACY_MTIME_WINDOW_NS:
+    from utils import mtime_is_racy  # function-local: bodies are rebound onto server.py's globals
+    if mtime is None or mtime_is_racy(mtime):
         return _RACY_MTIME
     return mtime
 
@@ -408,7 +408,7 @@ def _skills_tree_sig(base: Path, depth: int = 3) -> tuple:
     return (dirs, skills, newest, _watcher_mtime_ns(base))
 
 
-def _skills_sig():
+def _fork_skills_sig():
     """Everything the slash menu is built from, for the watcher home and every served profile:
     skills dirs (own + external_dirs), plugin dirs, and config.yaml (disabled skills, quick
     commands, enabled plugins). An install by any route — terminal, git, another app — moves it."""
@@ -420,6 +420,18 @@ def _skills_sig():
             sig.append(_skills_tree_sig(base))
         sig.append(_skills_tree_sig(root / "plugins", depth=1))
     return tuple(sig)
+
+
+def _skills_sig():
+    """The skill roots' stat signature for every scope a session resolved commands in (each profile
+    home and session repo, not only the launch one: ``agent.skill_commands.published_scopes_signature``):
+    a skill installed or removed from another terminal (``hermes skills install``, a dropped SKILL.md,
+    nested under a category) moves it, and attached clients refetch ``commands.catalog`` from this
+    gateway instead of rescanning disk."""
+    from agent.skill_commands import published_scopes_signature
+    # Fork (FORK.md change 10): plus the plugin dirs, config.yaml and served profiles the desktop
+    # slash menu is built from.
+    return (published_scopes_signature(), _fork_skills_sig())
 
 
 # event → (check interval, signature fn, payload fn). Signatures are stat-cheap; the interval
