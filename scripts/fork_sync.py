@@ -31,6 +31,7 @@ WORK = STATE / "work"
 PROMPTS = Path(__file__).with_name("fork_sync")
 UPSTREAM = "https://github.com/NousResearch/hermes-agent.git"
 SONNET = ("anthropic", "claude-sonnet-5-5")
+FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
 DESKTOP = REPO / "apps" / "desktop" / "release"
 
 
@@ -63,18 +64,42 @@ class _Result:
         return exit_code
 
 
-def ask(prompt, provider, model, tools):
-    """One unattended session through the running gateway; its cost goes to spend.jsonl."""
+def _openrouter_key():
+    """Safe mode reads no profile .env, so the key is passed with the session."""
+    env = HOME / ".env"
+    for line in env.read_text(encoding="utf-8-sig").splitlines() if env.exists() else []:
+        if line.startswith("OPENROUTER_API_KEY="):
+            return line.split("=", 1)[1].strip().strip("\"'") or None
+    return None
+
+
+def _session(prompt, provider, model, tools):
     out = _Result()
     args = argparse.Namespace(oneshot=prompt, provider=provider, model=model, toolsets=",".join(tools),
                               max_turns=150, yolo=True, safe_mode=True, source="tool", in_dir=str(WORK),
-                              quiet=True, reasoning=setting("agent.reasoning_effort"))
-    asyncio.run(run_gateway_chat(args, emitter=out))
+                              quiet=True, reasoning=setting("agent.reasoning_effort"),
+                              api_key=_openrouter_key() if provider == "openrouter" else None)
+    try:
+        asyncio.run(run_gateway_chat(args, emitter=out))
+    except Exception as exc:
+        out.result = {"failed": True, "error": str(exc)}
     r = out.result
     with open(STATE / "spend.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps({"time": datetime.now().isoformat(timespec="seconds"), "model": model,
                             **{k: r.get(k) for k in ("input_tokens", "output_tokens", "cache_read_tokens",
-                                                     "cache_write_tokens", "estimated_cost_usd")}}) + "\n")
+                                                     "cache_write_tokens", "estimated_cost_usd", "error")}}) + "\n")
+    return r
+
+
+def ask(prompt, provider, model, tools):
+    """One unattended session through the running gateway; its cost goes to spend.jsonl. If the
+    Anthropic subscription is unavailable (e.g. waiting for its usage reset), DeepSeek on OpenRouter
+    does the job instead."""
+    r = _session(prompt, provider, model, tools)
+    if r.get("failed") and (provider, model) != FALLBACK:
+        r = _session(prompt, *FALLBACK, tools)
+    if r.get("failed"):
+        raise Hold(f"The {model} session failed: {r.get('error') or 'no reply'}")
     return str(r.get("final_response") or "").strip(), r.get("estimated_cost_usd") or 0
 
 
