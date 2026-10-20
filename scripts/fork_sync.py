@@ -5,8 +5,13 @@ against the user's changes; if it flags anything, or git hits conflicts, one ses
 own model applies the rules at the top of FORK.md. The result is pushed to the fork, then
 `hermes update --yes` installs it. A failure writes update-hold.json and installs the fork as it was.
 
-    fork_sync.py                         the nightly run
+    fork_sync.py                         start a run through Task Scheduler (outside Hermes, so the
+                                         install cannot cut it off), for ad-hoc runs too
+    fork_sync.py --from-task             the run itself (the task's command line)
     fork_sync.py --dry-run FORK UPSTREAM  replay two commits with today's FORK.md; push and install nothing
+
+Every run ends with a report session in the user's session list (--report, in a fresh process so it
+runs on the newly installed code).
 """
 import argparse
 import asyncio
@@ -16,6 +21,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -34,10 +40,18 @@ TRIAGE = ("openrouter", "meta/muse-spark-1.3-contributor")
 FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
 REVIEW = ("openrouter", "meta/muse-spark-1.3-contributor")
 DESKTOP = REPO / "apps" / "desktop" / "release"
+TASK = "Hermes Auto Update"
 
 
 class Hold(Exception):
     pass
+
+
+RECORD = []  # what this run did, for the report session
+
+
+def record(text):
+    RECORD.append(text.strip())
 
 
 def git(*args, cwd=REPO, check=True):
@@ -77,7 +91,8 @@ def _openrouter_key():
 def _session(prompt, provider, model, tools, source):
     out = _Result()
     args = argparse.Namespace(oneshot=prompt, provider=provider, model=model, toolsets=",".join(tools),
-                              max_turns=150, yolo=True, safe_mode=True, source=source, in_dir=str(WORK),
+                              max_turns=150, yolo=True, safe_mode=True, source=source,
+                              in_dir=str(WORK if WORK.exists() else STATE),
                               quiet=True, reasoning=setting("agent.reasoning_effort"),
                               api_key=_openrouter_key() if provider == "openrouter" else None)
     try:
@@ -137,40 +152,84 @@ def merge(fork, upstream, fork_md=None):
         if subject.startswith("Merge pull request") and body.strip():
             subject = body.strip().splitlines()[0]  # the PR's title
         titles.append(f"{sha} {subject}")
+    record(f"{len(titles)} new NousResearch commit(s).")
     titles = "\n".join(titles)
     clean = git("merge", "--no-ff", "--no-edit", "-m", "Merge NousResearch main", upstream, cwd=WORK, check=False).returncode == 0
     clashes = git("diff", "--name-only", "--diff-filter=U", cwd=WORK).stdout.strip()
+    record(f"Git conflicts: {clashes or 'none'}.")
 
     flags, cost = ask((PROMPTS / "triage.md").read_text(encoding="utf-8").format(
         changes=your_changes(), commits=titles), *TRIAGE, tools=[])
+    record(f"Triage ({TRIAGE[1]}) flagged:\n{flags}")
     if flags.strip("` \njson") == "[]" and clean:
+        record("Nothing flagged and no conflicts, so no review was needed.")
         return "", cost
     note, review_cost = ask((PROMPTS / "review.md").read_text(encoding="utf-8").format(
         fork=fork, upstream=upstream, flags=flags, clashes=clashes or "none",
         python=sys.executable), *REVIEW, tools=["file", "terminal"],
         source="cli")  # "cli" shows the review in the user's session list; "tool" is hidden
     cost += review_cost
+    record(f"Review ({REVIEW[1]}) reply:\n{note}")
     if (WORK / ".git" / "MERGE_HEAD").exists() or git("merge-base", "--is-ancestor", upstream, "HEAD", cwd=WORK, check=False).returncode:
         raise Hold(note or "The review left the merge unfinished.")
     return note, cost
 
 
+REPORT_PROMPT = """Below is the record of one run of the user's Hermes update. Write him the report of this run. He is not
+a programmer: plain English, short, no preamble, in this order:
+
+1. What came in from NousResearch (how many commits), or that nothing new came in.
+2. What the triage flagged, one line each, or that nothing was flagged.
+3. What the review decided for each flagged item, keeping its substance, with anything waiting for his
+   decision stated plainly.
+4. Anything that failed or was held, and what that means for him.
+5. Whether the install succeeded.
+6. The model cost.
+
+# Record
+
+"""
+
+
+def report(path):
+    """The report session: the cheap model turns this run's record into the user's report."""
+    prompt = REPORT_PROMPT + Path(path).read_text(encoding="utf-8")
+    for _ in range(10):  # the install restarts the gateway; wait for it to come back
+        try:
+            ask(prompt, *TRIAGE, tools=[], source="cli")
+            return
+        except Hold:
+            time.sleep(30)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", nargs=2, metavar=("FORK", "UPSTREAM"))
+    p.add_argument("--from-task", action="store_true")
+    p.add_argument("--report")
     a = p.parse_args()
     STATE.mkdir(parents=True, exist_ok=True)
     if a.dry_run:
         note, cost = merge(*a.dry_run, fork_md=REPO / "FORK.md")
         print(note or "(nothing needed review)", f"\n\nModel cost: ${cost:.2f}")
         return
+    if a.report:
+        return report(a.report)
+    if not a.from_task:
+        subprocess.run(["schtasks.exe", "/run", "/tn", TASK], check=True)
+        print("Started the update through Task Scheduler. Its report will appear as a session when it finishes.")
+        return
+    record(f"Run started {datetime.now():%Y-%m-%d %H:%M}.")
     hold = HOME / "update-hold.json"
+    cost = 0
     try:
         git("fetch", "-q", "origin", "+refs/heads/main:refs/fork-sync/origin")
         git("fetch", "-q", "--no-tags", UPSTREAM, "+refs/heads/main:refs/fork-sync/upstream")
         git("fetch", "-q", "--no-tags", UPSTREAM, "+refs/tags/v*:refs/tags/v*", check=False)
         fork, upstream = (git("rev-parse", r).stdout.strip() for r in ("refs/fork-sync/origin", "refs/fork-sync/upstream"))
-        if git("merge-base", "--is-ancestor", upstream, fork, check=False).returncode:
+        if not git("merge-base", "--is-ancestor", upstream, fork, check=False).returncode:
+            record("Nothing new from NousResearch since the last merge.")
+        else:
             note, cost = merge(fork, upstream)
             r = subprocess.run([sys.executable, "-c", "import run_agent, hermes_cli.main, gateway.run"],
                                cwd=WORK, capture_output=True, text=True)
@@ -178,6 +237,7 @@ def main():
                 raise Hold(f"{note}\n\nThe merged result does not load:\n{r.stderr[-1500:]}")
             git("fetch", "-q", str(WORK), "+HEAD:refs/fork-sync/result")
             git("push", "-q", "origin", "refs/fork-sync/result:refs/heads/main")
+            record("The merged result was pushed to the fork.")
             if note:
                 notes = json.loads((HOME / "update-notes.json").read_text(encoding="utf-8-sig")) \
                     if (HOME / "update-notes.json").exists() else {"notes": []}
@@ -186,16 +246,26 @@ def main():
                 (HOME / "update-notes.json").write_text(json.dumps(notes, indent=1), encoding="utf-8")
         hold.unlink(missing_ok=True)
     except Exception as exc:
+        record("HELD: NousResearch's changes were not merged; Hermes is updated to the fork as it was. "
+               f"Reason:\n{str(exc)[-3000:]}")
         hold.write_text(json.dumps({"since": datetime.now().isoformat(timespec="seconds"),
                                     "reason": "NousResearch's changes were not merged into your fork tonight; "
                                               "Hermes was updated to your fork as it was.",
                                     "files": [], "detail": str(exc)[-3000:]}, indent=2), encoding="utf-8")
+    record(f"Model cost of the merge and review: ${cost:.2f} (estimate at API prices).")
     import psutil
     open_app = next((p.info["exe"] for p in psutil.process_iter(["name", "exe"])
                      if p.info["name"] == "Hermes.exe" and str(DESKTOP).lower() in (p.info["exe"] or "").lower()), None)
-    subprocess.run([str(REPO / "venv" / "Scripts" / "hermes.exe"), "update", "--yes"])
+    r = subprocess.run([str(REPO / "venv" / "Scripts" / "hermes.exe"), "update", "--yes"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-25:])
+    outcome = "succeeded" if r.returncode == 0 else f"FAILED with exit code {r.returncode}"
+    record(f"Install (hermes update) {outcome}. Last lines of its output:\n{tail}")
     if open_app:
         subprocess.Popen(["explorer.exe", open_app])
+    path = STATE / "last-run.txt"
+    path.write_text("\n\n".join(RECORD), encoding="utf-8")
+    subprocess.run([sys.executable, str(Path(__file__)), "--report", str(path)])
 
 
 if __name__ == "__main__":
