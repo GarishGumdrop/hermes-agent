@@ -175,6 +175,20 @@ that meet one of the changes below. This file is the list that review works from
   same function as the index truncation, with an explicit override for tests
   and callers.
 
+### 14. Old dependency environments are removed on Windows
+
+- **Files:** `hermes_cli/runtime_state.py` (`collect_generations`,
+  `_remove_generation`, `_empty_trash`).
+- **Purpose:** uv hard-links every environment's files to one shared copy, and
+  Windows refuses to delete any link to a library a running Hermes has loaded.
+  The cleaner hit such a file in the first old environment, raised, and gave up
+  on all of them, so a ~700 MB environment piled up with every update. Files
+  Windows refuses to delete are now moved to `installs/<id>/environments-trash`
+  and deleted on a later sweep, and one failing environment no longer stops the
+  rest.
+- **If it breaks:** keep generation removal tolerant of undeletable mapped
+  files on Windows, and keep one failure from aborting the sweep.
+
 ## Pending review
 
 ### 10. The slash menu updates when skills or plugins change on disk

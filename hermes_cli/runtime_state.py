@@ -196,6 +196,8 @@ def collect_generations(project: Path, *, min_age_seconds: float = 86400) -> lis
         generations = root / "environments"
         if not generations.is_dir():
             return removed
+        trash = root / _GENERATION_TRASH
+        _empty_trash(trash)
         for generation in generations.iterdir():
             if generation.is_symlink() or not generation.is_dir() or generation.resolve() == selected:
                 continue
@@ -203,9 +205,46 @@ def collect_generations(project: Path, *, min_age_seconds: float = 86400) -> lis
             if not marker.is_file() or time.time() - marker.stat().st_mtime < min_age_seconds:
                 continue
             if not leases_held(generation):
-                shutil.rmtree(generation)
+                try:
+                    _remove_generation(generation, trash)
+                except OSError as exc:
+                    # One stuck generation must not stop the sweep of the others.
+                    logging.getLogger(__name__).warning("could not remove %s: %s", generation, exc)
+                    continue
                 removed.append(generation)
     return removed
+
+
+#: Beside ``environments/`` so a stuck file never looks like a generation.
+_GENERATION_TRASH = "environments-trash"
+
+
+def _remove_generation(generation: Path, trash: Path) -> None:
+    """Delete *generation*, moving aside files Windows refuses to unlink.
+
+    uv hard-links venv files from its cache, so every generation shares one
+    file object per identical file. Windows denies deleting any link to an
+    image (.pyd/.dll) a running process has mapped, even through another
+    generation's link. Renaming is still allowed, so such files go to *trash*
+    (same volume) and are deleted on a later sweep once nothing maps them.
+    """
+    def move_aside(func, path, exc):
+        if not isinstance(exc, PermissionError) or func is not os.unlink:
+            raise exc
+        trash.mkdir(parents=True, exist_ok=True)
+        os.replace(path, trash / uuid.uuid4().hex)
+
+    shutil.rmtree(generation, onexc=move_aside)
+
+
+def _empty_trash(trash: Path) -> None:
+    if not trash.is_dir():
+        return
+    for item in trash.iterdir():
+        with suppress(OSError):
+            item.unlink()
+    with suppress(OSError):
+        trash.rmdir()
 
 
 def leases_held(generation: Path) -> bool:
