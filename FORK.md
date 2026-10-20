@@ -132,7 +132,8 @@ that meet one of the changes below. This file is the list that review works from
 ### 11. Nightly merge and review of NousResearch's main
 
 - **Files:** `scripts/fork_sync.py`, `scripts/fork_sync/triage.md`, `scripts/fork_sync/review.md`
-  (all new). Task Scheduler's "Hermes Auto Update" runs the script with Hermes's venv python.
+  (all new). Task Scheduler's "Hermes Auto Update" runs the script with Hermes's venv python
+  inside `powershell.exe -NoExit`, so its progress window stays open until the user closes it.
 - **Purpose:** merges NousResearch's main into the fork; Sonnet reads the new commit titles against
   this file, the user's plugins and his edited built-in skills; flagged items or git conflicts go to
   one session on the user's own model, which applies the rules above. The result is pushed, then

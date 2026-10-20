@@ -11,7 +11,9 @@ own model applies the rules at the top of FORK.md. The result is pushed to the f
     fork_sync.py --dry-run FORK UPSTREAM  replay two commits with today's FORK.md; push and install nothing
 
 Every run ends with a report session in the user's session list (--report, in a fresh process so it
-runs on the newly installed code).
+runs on the newly installed code). The task runs the script in a PowerShell window that stays open
+(-NoExit); the window shows only live progress (step start times and the install's output), since
+the results are in the report.
 """
 import argparse
 import asyncio
@@ -27,9 +29,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from hermes_cli.config import load_config_readonly  # noqa: E402
-from hermes_cli.gateway_chat import run_gateway_chat  # noqa: E402
-from hermes_constants import get_hermes_home  # noqa: E402
+from hermes_cli.config import load_config_readonly
+from hermes_cli.gateway_chat import run_gateway_chat
+from hermes_constants import get_hermes_home
 
 HOME = Path(get_hermes_home())
 STATE = HOME / "fork-sync"
@@ -54,8 +56,13 @@ def record(text):
     RECORD.append(text.strip())
 
 
+def say(step):
+    """One progress line in the task's window; results belong in the report, not here."""
+    print(f"[{datetime.now():%H:%M:%S}] {step}", flush=True)
+
+
 def git(*args, cwd=REPO, check=True):
-    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    r = subprocess.run(["git", "-C", str(cwd), *args], check=False, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and r.returncode:
         raise Hold(f"git {' '.join(args[:2])} failed: {(r.stderr or r.stdout).strip()[-600:]}")
     return r
@@ -134,6 +141,7 @@ def your_changes():
 def merge(fork, upstream, fork_md=None):
     """Merge and review in WORK. Returns the note for the user ('' when nothing needed review)."""
     # Git marks its object files read-only; Windows refuses to delete them until that is cleared.
+    say("Merging NousResearch's changes in a scratch copy...")
     if WORK.exists():
         shutil.rmtree(WORK, onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
     git("clone", "-q", "--shared", "--no-checkout", str(REPO), str(WORK), cwd=STATE)
@@ -158,12 +166,14 @@ def merge(fork, upstream, fork_md=None):
     clashes = git("diff", "--name-only", "--diff-filter=U", cwd=WORK).stdout.strip()
     record(f"Git conflicts: {clashes or 'none'}.")
 
+    say(f"Triage running ({TRIAGE[1]})...")
     flags, cost = ask((PROMPTS / "triage.md").read_text(encoding="utf-8").format(
         changes=your_changes(), commits=titles), *TRIAGE, tools=[])
     record(f"Triage ({TRIAGE[1]}) flagged:\n{flags}")
     if flags.strip("` \njson") == "[]" and clean:
         record("Nothing flagged and no conflicts, so no review was needed.")
         return "", cost
+    say(f"Review running ({REVIEW[1]}); this can take a while...")
     note, review_cost = ask((PROMPTS / "review.md").read_text(encoding="utf-8").format(
         fork=fork, upstream=upstream, flags=flags, clashes=clashes or "none",
         python=sys.executable), *REVIEW, tools=["file", "terminal"],
@@ -219,10 +229,13 @@ def main():
         subprocess.run(["schtasks.exe", "/run", "/tn", TASK], check=True)
         print("Started the update through Task Scheduler. Its report will appear as a session when it finishes.")
         return
+    sys.stdout.reconfigure(errors="replace")
+    say("Hermes nightly update started.")
     record(f"Run started {datetime.now():%Y-%m-%d %H:%M}.")
     hold = HOME / "update-hold.json"
     cost = 0
     try:
+        say("Fetching your fork and NousResearch's main...")
         git("fetch", "-q", "origin", "+refs/heads/main:refs/fork-sync/origin")
         git("fetch", "-q", "--no-tags", UPSTREAM, "+refs/heads/main:refs/fork-sync/upstream")
         git("fetch", "-q", "--no-tags", UPSTREAM, "+refs/tags/v*:refs/tags/v*", check=False)
@@ -231,10 +244,12 @@ def main():
             record("Nothing new from NousResearch since the last merge.")
         else:
             note, cost = merge(fork, upstream)
+            say("Checking that the merged result loads...")
             r = subprocess.run([sys.executable, "-c", "import run_agent, hermes_cli.main, gateway.run"],
-                               cwd=WORK, capture_output=True, text=True)
+                               check=False, cwd=WORK, capture_output=True, text=True)
             if r.returncode:
                 raise Hold(f"{note}\n\nThe merged result does not load:\n{r.stderr[-1500:]}")
+            say("Pushing the merged result to your fork...")
             git("fetch", "-q", str(WORK), "+HEAD:refs/fork-sync/result")
             git("push", "-q", "origin", "refs/fork-sync/result:refs/heads/main")
             record("The merged result was pushed to the fork.")
@@ -256,16 +271,25 @@ def main():
     import psutil
     open_app = next((p.info["exe"] for p in psutil.process_iter(["name", "exe"])
                      if p.info["name"] == "Hermes.exe" and str(DESKTOP).lower() in (p.info["exe"] or "").lower()), None)
-    r = subprocess.run([str(REPO / "venv" / "Scripts" / "hermes.exe"), "update", "--yes"],
-                       capture_output=True, text=True, encoding="utf-8", errors="replace")
-    tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-25:])
-    outcome = "succeeded" if r.returncode == 0 else f"FAILED with exit code {r.returncode}"
+    say("Installing (hermes update); its output follows.")
+    proc = subprocess.Popen([str(REPO / "venv" / "Scripts" / "hermes.exe"), "update", "--yes"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace")
+    lines = []
+    for line in proc.stdout:
+        print("    " + line.rstrip(), flush=True)
+        lines.append(line.rstrip())
+    returncode = proc.wait()
+    tail = "\n".join("\n".join(lines).strip().splitlines()[-25:])
+    outcome = "succeeded" if returncode == 0 else f"FAILED with exit code {returncode}"
     record(f"Install (hermes update) {outcome}. Last lines of its output:\n{tail}")
     if open_app:
         subprocess.Popen(["explorer.exe", open_app])
     path = STATE / "last-run.txt"
     path.write_text("\n\n".join(RECORD), encoding="utf-8")
-    subprocess.run([sys.executable, str(Path(__file__)), "--report", str(path)])
+    say("Writing the report...")
+    subprocess.run([sys.executable, str(Path(__file__)), "--report", str(path)], check=False)
+    say("Finished. The report is in your session list. You can close this window.")
 
 
 if __name__ == "__main__":
