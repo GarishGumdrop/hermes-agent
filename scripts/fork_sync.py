@@ -30,7 +30,7 @@ STATE = HOME / "fork-sync"
 WORK = STATE / "work"
 PROMPTS = Path(__file__).with_name("fork_sync")
 UPSTREAM = "https://github.com/NousResearch/hermes-agent.git"
-SONNET = ("anthropic", "claude-sonnet-5-5")
+TRIAGE = ("openrouter", "meta/muse-spark-1.3-contributor")
 FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
 REVIEW = ("openrouter", "meta/muse-spark-1.3-contributor")
 DESKTOP = REPO / "apps" / "desktop" / "release"
@@ -142,7 +142,7 @@ def merge(fork, upstream, fork_md=None):
     clashes = git("diff", "--name-only", "--diff-filter=U", cwd=WORK).stdout.strip()
 
     flags, cost = ask((PROMPTS / "triage.md").read_text(encoding="utf-8").format(
-        changes=your_changes(), commits=titles), *SONNET, tools=[])
+        changes=your_changes(), commits=titles), *TRIAGE, tools=[])
     if flags.strip("` \njson") == "[]" and clean:
         return "", cost
     note, review_cost = ask((PROMPTS / "review.md").read_text(encoding="utf-8").format(
