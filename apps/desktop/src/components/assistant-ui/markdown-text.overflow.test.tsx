@@ -77,11 +77,13 @@ describe('markdown surface survives stack-overflow content', () => {
 })
 
 describe('MarkdownTextContent overflow containment', () => {
-  // #70451: wide content must never push a horizontal scrollbar onto the
-  // transcript. Prose wraps; tables and fenced code keep content-sized layout
+  // Wide content must never push a horizontal scrollbar onto the
+  // transcript. Prose wraps; tables keep content-sized layout
   // and scroll inside their own cards, so the thread itself stays one column
-  // wide. The missing link was min-w-0 on the markdown container.
-  it('keeps prose in the column while tables and code scroll inside their own cards', async () => {
+  // wide. Fenced code wraps like user fences do (whitespace-pre-wrap +
+  // wrap-anywhere) instead of scrolling sideways. The missing link was
+  // min-w-0 on the markdown container.
+  it('keeps prose in the column while tables scroll and code wraps', async () => {
     const longToken = 'x'.repeat(500)
 
     const text = [
@@ -107,8 +109,10 @@ describe('MarkdownTextContent overflow containment', () => {
     const tableWrapper = container.querySelector('.aui-md-table')!
 
     expect(markdown.className).toContain('min-w-0')
-    expect(codeScroller.className).toContain('overflow-x-auto')
+    expect(codeScroller.className).toContain('overflow-x-hidden')
+    expect(codeScroller.className).not.toContain('overflow-x-auto')
     expect(codeCard.textContent).toContain(longToken)
+    expect(codeCard.querySelector('code')?.className).toContain('whitespace-pre-wrap')
     expect(tableWrapper.className).toContain('overflow-x-auto')
   })
 })

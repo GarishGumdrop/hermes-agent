@@ -112,7 +112,7 @@ function escapeHtml(text: string): string {
 
 /** Never let a highlight failure blank a block — degrade to escaped plain text. */
 function plainTextHtml(code: string): string {
-  return `<pre class="shiki" style="background-color:transparent;margin:0"><code>${escapeHtml(code)}</code></pre>`
+  return `<pre class="shiki" style="background-color:transparent;margin:0;white-space:pre-wrap;overflow-wrap:anywhere"><code>${escapeHtml(code)}</code></pre>`
 }
 
 export default function CachedShikiBlock({ language, code, theme, colorReplacements }: CachedShikiBlockProps) {

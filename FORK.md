@@ -141,6 +141,40 @@ that meet one of the changes below. This file is the list that review works from
 - **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat` or `tools/skills_sync.py`
   changed; adapt the two calls in the script.
 
+### 12. Assistant code blocks wrap long lines instead of scrolling sideways
+
+- **Files:** `apps/desktop/src/components/chat/code-card.tsx` (wrapping
+  utilities on `CodeCardBody` pre/code/line); `apps/desktop/src/components/chat/shiki-highlighter.tsx`
+  (`PlainCode` wraps); `apps/desktop/src/components/chat/shiki-plain.tsx`
+  (`PlainShiki` wraps); `apps/desktop/src/components/chat/shiki-block.tsx`
+  (`plainTextHtml` fallback wraps); `apps/desktop/src/components/chat/expandable-block.tsx`
+  (horizontal overflow hidden); `apps/desktop/src/styles.css` (code-card
+  pre/code/`.shiki`/`.line` wrap rule); `apps/desktop/src/components/assistant-ui/markdown-text.overflow.test.tsx`
+  (updated expectations).
+- **Purpose:** a long line in an assistant code block ran off the side of the
+  card behind a horizontal scroller. Assistant fences now wrap the way user
+  fences already do (`whitespace-pre-wrap` + `wrap-anywhere`), so the whole
+  block stays readable in the column. Tables keep their own horizontal scroll;
+  copy still takes the original text.
+- **If it breaks:** upstream probably reshaped the code-card render path. Keep
+  the rule: every pre/code path (plain, highlighted, loading and error
+  fallbacks) wraps, and the card's scroller never scrolls sideways.
+
+### 13. The /learn prompt uses the configured skill description limit
+
+- **Files:** `agent/learn_prompt.py` (`_AUTHORING_STANDARDS` is a
+  `{desc_limit}` template; `build_learn_prompt` takes an optional
+  `description_limit`, defaulting to `skill_prompt_desc_limit()`);
+  `tests/agent/test_learn_prompt.py` (`TestDescriptionLimit`).
+- **Purpose:** the prompt told the drafting agent every new description must
+  fit 60 characters, while the user's `skills.description_limit` is 100 and
+  the create gate enforces 100 — so /learn cut descriptions down for a limit
+  nothing else applied. The prompt now renders the configured limit, like the
+  index truncation and the create check already do.
+- **If it breaks:** keep the description number in the prompt read from the
+  same function as the index truncation, with an explicit override for tests
+  and callers.
+
 ## Pending review
 
 ### 10. The slash menu updates when skills or plugins change on disk

@@ -35,7 +35,7 @@ export function ExpandableBlock({ children, className }: ExpandableBlockProps) {
         className={cn(
           // `scrollbar-overlay` opts out of the app-wide classic thin gutters so
           // this scroller keeps platform overlay bars (no always-on track).
-          'scrollbar-overlay overflow-y-auto overflow-x-auto',
+          'scrollbar-overlay overflow-y-auto overflow-x-hidden',
           expanded ? 'max-h-[40dvh]' : 'max-h-[7.5rem]',
           className
         )}

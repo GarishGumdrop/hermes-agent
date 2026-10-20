@@ -2220,6 +2220,23 @@ body.guest-pointer-lock :is(webview, iframe) {
   padding: 0 !important;
 }
 
+/* Fork: assistant code blocks wrap long lines instead of scrolling sideways.
+   User fences already wrap (whitespace-pre-wrap + wrap-anywhere); the
+   assistant card kept whitespace-pre with an horizontal scroller, so a long
+   line ran off the side. This makes highlighted (.shiki/.line) and plain
+   pre/code wrap the same way. Copy still takes the original text. */
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'] pre,
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'] code,
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'] .shiki,
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'] .shiki code,
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'] .shiki .line {
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+  overflow-x: hidden !important;
+  max-width: 100% !important;
+}
+
 [data-slot='aui_assistant-message-content'] .aui-md .aui-md-table {
   border-spacing: 0;
 }
