@@ -41,6 +41,10 @@ FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
 REVIEW = ("openrouter", "meta/muse-spark-1.3-contributor")
 DESKTOP = REPO / "apps" / "desktop" / "release"
 TASK = "Hermes Auto Update"
+# Held for the whole run; the nightly X-to-Z mirror (X:\Projects\x-mirror) holds it too, so the two never
+# overlap. The mirror also waits 10 minutes after FINISHED_AT before it starts.
+LOCK = "Global\\HermesUpdateXMirror"
+FINISHED_AT = STATE / "finished-at.txt"
 
 
 class Hold(Exception):
@@ -52,6 +56,27 @@ RECORD = []  # what this run did, for the report session
 
 def record(text):
     RECORD.append(text.strip())
+
+
+def hold_lock():
+    """Wait for the lock shared with the X mirror, then hold it until this process exits (Windows releases
+    it then even after a crash). On a normal exit, record when the run finished and release it."""
+    import atexit
+    import ctypes
+    k = ctypes.windll.kernel32
+    k.CreateMutexW.restype = ctypes.c_void_p
+    k.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    handle = k.CreateMutexW(None, False, LOCK)
+    started = time.time()
+    k.WaitForSingleObject(handle, 0xFFFFFFFF)
+    if time.time() - started > 60:
+        record(f"Waited {(time.time() - started) / 60:.0f} minutes for the X mirror to finish.")
+    def release():
+        FINISHED_AT.write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+        k.ReleaseMutex(handle)
+    k.ReleaseMutex.argtypes = [ctypes.c_void_p]
+    atexit.register(release)
+    return handle  # kept referenced until exit
 
 
 def git(*args, cwd=REPO, check=True):
@@ -219,6 +244,7 @@ def main():
         subprocess.run(["schtasks.exe", "/run", "/tn", TASK], check=True)
         print("Started the update through Task Scheduler. Its report will appear as a session when it finishes.")
         return
+    lock = hold_lock()  # noqa: F841 -- held until exit
     record(f"Run started {datetime.now():%Y-%m-%d %H:%M}.")
     hold = HOME / "update-hold.json"
     cost = 0
