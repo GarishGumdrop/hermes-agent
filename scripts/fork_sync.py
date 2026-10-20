@@ -32,6 +32,7 @@ PROMPTS = Path(__file__).with_name("fork_sync")
 UPSTREAM = "https://github.com/NousResearch/hermes-agent.git"
 SONNET = ("anthropic", "claude-sonnet-5-5")
 FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
+REVIEW = ("openrouter", "meta/muse-spark-1.3-contributor")
 DESKTOP = REPO / "apps" / "desktop" / "release"
 
 
@@ -146,7 +147,7 @@ def merge(fork, upstream, fork_md=None):
         return "", cost
     note, review_cost = ask((PROMPTS / "review.md").read_text(encoding="utf-8").format(
         fork=fork, upstream=upstream, flags=flags, clashes=clashes or "none",
-        python=sys.executable), setting("model.provider"), setting("model.default"), tools=["file", "terminal"],
+        python=sys.executable), *REVIEW, tools=["file", "terminal"],
         source="cli")  # "cli" shows the review in the user's session list; "tool" is hidden
     cost += review_cost
     if (WORK / ".git" / "MERGE_HEAD").exists() or git("merge-base", "--is-ancestor", upstream, "HEAD", cwd=WORK, check=False).returncode:
