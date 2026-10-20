@@ -138,9 +138,6 @@ that meet one of the changes below. This file is the list that review works from
   one session on the user's own model, which applies the rules above. The result is pushed, then
   `hermes update --yes` installs it and the desktop app is reopened if it was open. Each model call's
   cost goes to `<hermes home>/fork-sync/spend.jsonl`. A failure writes `update-hold.json`.
-  The run holds the lock `Global\HermesUpdateXMirror`, shared with the nightly X-to-Z mirror
-  (`X:\Projects\x-mirror`), so the two never overlap; on exit it writes `fork-sync/finished-at.txt`,
-  which the mirror uses to start no sooner than 10 minutes later.
 - **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat` or `tools/skills_sync.py`
   changed; adapt the two calls in the script.
 
