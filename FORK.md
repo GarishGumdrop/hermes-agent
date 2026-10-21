@@ -193,15 +193,15 @@ that meet one of the changes below. This file is the list that review works from
 ### 15. Security update for the eMudhra CA key compromise
 
 - **Files:** `pyproject.toml` (certifi pin 2026.10.19 and an `exclude-newer-package`
-  exemption for certifi), `uv.lock`, `pm/lock.json` (node 26.12.1; the Termux row
-  stays on 26.4.0 until Termux publishes 26.12.1).
+  exemption for certifi), `uv.lock`, `pm/lock.json` (node 26.12.1, uv 0.13.4,
+  python 3.14.9; the Termux node row stays on 26.4.0 until Termux publishes 26.12.1).
 - **Purpose:** the private keys of eight eMudhra intermediate CAs were compromised
   (emudhra.we-have-a-problem.com, 2026-10-20). certifi 2026.10.19 and Node 26.12.1
   (NSS 3.131.1 roots) stop trusting them; the older pins still did. The user
   requires that his machine's protection take priority over the 3-day release-age rule.
-- **If it breaks:** when NousResearch pins certifi >= 2026.10.19 and node >= 26.12.1,
-  retire this change and drop the certifi exemption. Never move either pin back below
-  those versions.
+- **If it breaks:** when NousResearch pins certifi >= 2026.10.19, node >= 26.12.1,
+  uv >= 0.13.4 and python >= 3.14.9, retire this change and drop the certifi exemption.
+  Never move any of these pins back below those versions.
 
 ## Pending review
 
