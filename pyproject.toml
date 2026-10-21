@@ -38,7 +38,7 @@ dependencies = [
   # user picks that backend. Smaller `dependencies` = smaller blast
   # radius for the next supply-chain attack.
   "openai==2.24.0; python_version >= '3.14'",
-  "certifi==2026.5.20; python_version >= '3.14'",
+  "certifi==2026.10.19; python_version >= '3.14'",
   # TLS trust comes from the OS certificate store (agent/ssl_verify.py), so
   # a corporate/internal root installed on the machine just works. certifi
   # above stays a direct pin because httpx/requests/openai each depend on
@@ -637,6 +637,9 @@ override-dependencies = [
 # package mirrors publish no upload times and uv rejects a file it cannot date
 # (#135589). Exact pins follow the same 3-day rule; there are no exemptions.
 exclude-newer = "3 days"
+# Fork exemption: certifi 2026.10.19 drops the compromised eMudhra intermediates
+# (disclosed 2026-10-20). Security fix taken before the 3-day window. Remove after 2026-10-23.
+exclude-newer-package = { certifi = "2026-10-21T00:00:00Z" }
 
 [tool.setuptools]
 # Root single-file modules are derived by setup.py at build time from the
