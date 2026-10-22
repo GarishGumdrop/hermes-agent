@@ -22,7 +22,6 @@ import { markRuntimeGone } from '@/store/runtime-gone'
 import { getSessionOwnerHint, knownSessionOwner, ownerLookupSessionRows, requestSessionResume } from '@/store/session'
 import type { SessionOwnerScope } from '@/store/session-request-router'
 import { $sessionTiles, dropSessionState, sessionTileDelegate, unbindTileRuntime } from '@/store/session-states'
-import { invalidateSkillSuggestionIndex } from '@/store/suggestion-providers/skill'
 // Leaf import (not the `@/themes` barrel) to avoid pulling the ThemeProvider
 // module graph into the gateway event hot path.
 import { ingestBackendSkin } from '@/themes/backend-sync'
@@ -82,7 +81,6 @@ export function handleLifecycleEvent(ctx: GatewayEventContext): boolean {
     // every profile so `/` lists what exists now. Not gated on the active
     // source: the cache is keyed per session/profile and refetches lazily.
     invalidateSlashCompletions()
-    invalidateSkillSuggestionIndex()
 
     return true
   }

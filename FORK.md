@@ -214,7 +214,10 @@ that meet one of the changes below. This file is the list that review works from
   regenerated from it by `scripts/gen_gateway_contracts.py`
   (`apps/shared/src/gateway-contract.generated.ts`, `.openrpc.json`);
   `apps/desktop/src/app/session/hooks/use-message-stream/gateway-event/lifecycle.ts` (a
-  `skills.changed` branch and two imports); tests in `tests/tui_gateway/test_fork_skills_changed.py`.
+  `skills.changed` branch and one import, `invalidateSlashCompletions`; the second call,
+  `invalidateSkillSuggestionIndex`, was removed after NousResearch deleted
+  `apps/desktop/src/store/suggestion-providers/` in 833cfc607a, which broke every desktop
+  build from 2026-10-22); tests in `tests/tui_gateway/test_fork_skills_changed.py`.
 - **Purpose:** the desktop caches the slash-command list for an hour and refreshes it only when a
   skill changes through the app itself (Capabilities, the hub, the `skill_manage` tool). A skill
   installed any other way, e.g. by the agent with curl or git, stayed missing from the `/` menu

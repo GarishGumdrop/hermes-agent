@@ -1,4 +1,8 @@
-"""Nightly fork update (fork change 11), run by Task Scheduler with Hermes's venv python.
+"""Nightly fork update (fork change 11), run by Task Scheduler through Hermes's launcher:
+`.hermes/bin/hermes.CMD --run-module scripts.fork_sync --from-task`. The launcher first builds the
+Python environment for the checkout's lock files if it is missing; otherwise the first session this
+script asks the backend for would have to build it within the backend's 60-second start limit for
+a session process, and fail.
 
 Merges NousResearch's main into the fork in a scratch copy. Sonnet reads the new commit titles
 against the user's changes; if it flags anything, or git hits conflicts, one session on the user's
@@ -19,6 +23,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -43,6 +48,24 @@ FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
 REVIEW = ("openrouter", "meta/muse-spark-1.3-contributor")
 DESKTOP = REPO / "apps" / "desktop" / "release"
 TASK = "Hermes Auto Update"
+LAUNCHER = REPO / ".hermes" / "bin" / ("hermes.CMD" if os.name == "nt" else "hermes")
+
+
+def hermes_python():
+    """The Python of the environment Hermes runs on now. Not sys.executable: under the launcher
+    that is the bare interpreter, and the task used to run this script on a stale 3.11 venv."""
+    from pm.environments import committed_venv
+    venv = committed_venv(REPO)
+    exe = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python") if venv else None
+    return str(exe) if exe and exe.exists() else sys.executable
+
+
+def notify(text):
+    """A note shown to the user on his next message (update-notes.json)."""
+    path = HOME / "update-notes.json"
+    notes = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {"notes": []}
+    notes["notes"].append({"date": datetime.now().strftime("%Y-%m-%d %H:%M"), "text": text})
+    path.write_text(json.dumps(notes, indent=1), encoding="utf-8")
 
 
 class Hold(Exception):
@@ -118,8 +141,8 @@ def ask(prompt, provider, model, tools, source="tool"):
     """One unattended session through the running gateway; its cost goes to spend.jsonl. Retries both
     models with growing waits; if none replies, raises Hold with the real errors (the update then
     installs the fork as it was and reports the hold)."""
-    # OpenRouter and the backend (paused or restarting during an update) both fail transiently, so
-    # keep trying both models with growing waits (~10 minutes in all) before giving up.
+    # OpenRouter can fail briefly, and Hermes refuses new sessions while an update holds its update
+    # lock, so keep trying both models with growing waits (~10 minutes in all) before giving up.
     errors = []
     for wait in (0, 15, 30, 60, 120, 240):
         if wait:
@@ -130,7 +153,9 @@ def ask(prompt, provider, model, tools, source="tool"):
             reply = str(r.get("final_response") or "").strip()
             if not r.get("failed") and reply:
                 return reply, r.get("estimated_cost_usd") or 0
-            errors.append(f"{mod}: {r.get('error') or 'empty reply'}")
+            why = r.get("error") or ("the session failed without saying why (see logs/gateway.log)"
+                                     if r.get("failed") else "the model's reply was empty")
+            errors.append(f"{mod}: {why}")
     raise Hold(f"No model replied after {len(errors)} attempts over about 10 minutes. "
                f"Last errors: {'; '.join(errors[-2:])}")
 
@@ -185,7 +210,7 @@ def merge(fork, upstream, fork_md=None):
     say(f"Review running ({REVIEW[1]}); this can take a while...")
     note, review_cost = ask((PROMPTS / "review.md").read_text(encoding="utf-8").format(
         fork=fork, upstream=upstream, flags=flags, clashes=clashes or "none",
-        python=sys.executable), *REVIEW, tools=["file", "terminal"],
+        python=hermes_python()), *REVIEW, tools=["file", "terminal"],
         source="cli")  # "cli" shows the review in the user's session list; "tool" is hidden
     cost += review_cost
     record(f"Review ({REVIEW[1]}) reply:\n{note}")
@@ -211,14 +236,16 @@ a programmer: plain English, short, no preamble, in this order:
 
 
 def report(path):
-    """The report session: the cheap model turns this run's record into the user's report."""
+    """The report session: the cheap model turns this run's record into the user's report. ask()
+    already retries for ~10 minutes; if no model replies, the user is told so instead of nothing."""
     prompt = REPORT_PROMPT + Path(path).read_text(encoding="utf-8")
-    for _ in range(10):  # the install restarts the gateway; wait for it to come back
-        try:
-            ask(prompt, *TRIAGE, tools=[], source="cli")
-            return
-        except Hold:
-            time.sleep(30)
+    try:
+        ask(prompt, *TRIAGE, tools=[], source="cli")
+    except Hold as exc:
+        notify(f"Tonight's Hermes update ran, but its report could not be written. {exc}\n\n"
+               f"What the run did is in {path}.")
+        return 2
+    return 0
 
 
 def main():
@@ -254,8 +281,10 @@ def main():
         else:
             note, cost = merge(fork, upstream)
             say("Checking that the merged result loads...")
-            r = subprocess.run([sys.executable, "-c", "import run_agent, hermes_cli.main, gateway.run"],
-                               check=False, cwd=WORK, capture_output=True, text=True)
+            # Hermes's own Python, without PYTHONPATH (the launcher points it at the live checkout).
+            r = subprocess.run([hermes_python(), "-c", "import run_agent, hermes_cli.main, gateway.run"],
+                               check=False, cwd=WORK, capture_output=True, text=True,
+                               env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
             if r.returncode:
                 raise Hold(f"{note}\n\nThe merged result does not load:\n{r.stderr[-1500:]}")
             say("Pushing the merged result to your fork...")
@@ -263,11 +292,7 @@ def main():
             git("push", "-q", "origin", "refs/fork-sync/result:refs/heads/main")
             record("The merged result was pushed to the fork.")
             if note:
-                notes = json.loads((HOME / "update-notes.json").read_text(encoding="utf-8-sig")) \
-                    if (HOME / "update-notes.json").exists() else {"notes": []}
-                notes["notes"].append({"date": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                       "text": f"Tonight's update reviewed NousResearch's changes. {note}\n\nModel cost: ${cost:.2f}"})
-                (HOME / "update-notes.json").write_text(json.dumps(notes, indent=1), encoding="utf-8")
+                notify(f"Tonight's update reviewed NousResearch's changes. {note}\n\nModel cost: ${cost:.2f}")
         hold.unlink(missing_ok=True)
     except Exception as exc:
         record("HELD: NousResearch's changes were not merged; Hermes is updated to the fork as it was. "
@@ -281,12 +306,7 @@ def main():
     open_app = next((p.info["exe"] for p in psutil.process_iter(["name", "exe"])
                      if p.info["name"] == "Hermes.exe" and str(DESKTOP).lower() in (p.info["exe"] or "").lower()), None)
     say("Installing (hermes update); its output follows.")
-    # Hermes's own launcher (REPO/.hermes/bin) runs the managed Python; REPO/venv is a stale
-    # Python 3.11 leftover that cannot run current Hermes (requires 3.14).
-    launcher = REPO / ".hermes" / "bin" / ("hermes.CMD" if os.name == "nt" else "hermes")
-    hermes = str(launcher if launcher.exists() else REPO / "venv" / "Scripts" / "hermes.exe")
-    say(f"Using {hermes}")
-    proc = subprocess.Popen([hermes, "update", "--yes"],
+    proc = subprocess.Popen([str(LAUNCHER), "update", "--yes"],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace")
     lines = []
@@ -295,16 +315,28 @@ def main():
         lines.append(line.rstrip())
     returncode = proc.wait()
     tail = "\n".join("\n".join(lines).strip().splitlines()[-25:])
+    # hermes update exits 0 even when a step fails (e.g. the desktop app build), so look for it.
+    problems = [line.strip()[:240] for line in lines
+                if re.search(r"^\s*✗|did not finish|completion failed", line)][:6]
+    if returncode:
+        problems.insert(0, f"hermes update exited with code {returncode}.")
     outcome = "succeeded" if returncode == 0 else f"FAILED with exit code {returncode}"
     record(f"Install (hermes update) {outcome}. Last lines of its output:\n{tail}")
+    if problems:
+        RECORD.insert(1, "PROBLEMS during the install:\n" + "\n".join(problems))
+        notify("Tonight's Hermes update finished, but with problems:\n" + "\n".join(problems)
+               + f"\n\nThe full output is in {HOME / 'logs' / 'update.log'}.")
     if open_app:
         subprocess.Popen(["explorer.exe", open_app])
     path = STATE / "last-run.txt"
     path.write_text("\n\n".join(RECORD), encoding="utf-8")
     say("Writing the report...")
-    subprocess.run([sys.executable, str(Path(__file__)), "--report", str(path)], check=False)
+    done = subprocess.run([hermes_python(), str(Path(__file__)), "--report", str(path)], check=False)
+    if done.returncode not in (0, 2):  # 2: report() has already told the user
+        notify(f"Tonight's Hermes update ran, but its report could not be written (the report step "
+               f"exited with code {done.returncode}). What the run did is in {path}.")
     say("Finished. The report is in your session list. You can close this window.")
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
