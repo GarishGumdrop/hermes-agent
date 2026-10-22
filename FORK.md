@@ -132,15 +132,24 @@ that meet one of the changes below. This file is the list that review works from
 ### 11. Nightly merge and review of NousResearch's main
 
 - **Files:** `scripts/fork_sync.py`, `scripts/fork_sync/triage.md`, `scripts/fork_sync/review.md`
-  (all new). Task Scheduler's "Hermes Auto Update" runs the script with Hermes's venv python
-  inside `powershell.exe -NoExit`, so its progress window stays open until the user closes it.
+  (all new). Task Scheduler's "Hermes Auto Update" runs the script through Hermes's launcher
+  (`.hermes\bin\hermes.CMD --run-module scripts.fork_sync --from-task`) inside
+  `powershell.exe -NoExit`, so its progress window stays open until the user closes it. The task's
+  multiple-instances policy is Parallel, so an open window never blocks the next night's run; an OS
+  lock (`fork-sync/run.lock`) stops a second run while one is in progress.
 - **Purpose:** merges NousResearch's main into the fork; Sonnet reads the new commit titles against
   this file, the user's plugins and his edited built-in skills; flagged items or git conflicts go to
   one session on the user's own model, which applies the rules above. The result is pushed, then
   `hermes update --yes` installs it and the desktop app is reopened if it was open. Each model call's
   cost goes to `<hermes home>/fork-sync/spend.jsonl`. A failure writes `update-hold.json`.
-- **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat` or `tools/skills_sync.py`
-  changed; adapt the two calls in the script.
+- **Reliability rules (each fixes a failure seen on 2026-10-22):** the launcher builds the Python
+  environment for changed lock files before any session starts (a session process gets only 60
+  seconds to start, too little for a build). Model calls retry both models for about 10 minutes.
+  Child steps use Hermes's own environment Python (`hermes_python()`), never `sys.executable`.
+  Install problems (`hermes update` exits 0 even when the desktop build fails) and a report that
+  could not be written become notes in `update-notes.json`; nothing fails silently.
+- **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat`, `pm.environments.committed_venv`
+  or `tools/skills_sync.py` changed; adapt the calls in the script.
 
 ### 12. Assistant code blocks wrap long lines instead of scrolling sideways
 
