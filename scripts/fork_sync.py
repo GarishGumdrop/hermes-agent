@@ -272,11 +272,10 @@ def main():
     open_app = next((p.info["exe"] for p in psutil.process_iter(["name", "exe"])
                      if p.info["name"] == "Hermes.exe" and str(DESKTOP).lower() in (p.info["exe"] or "").lower()), None)
     say("Installing (hermes update); its output follows.")
-    # The live Hermes runs from installs/<id>/environments/<gen>/venv, found on PATH; REPO/venv is a
-    # stale Python 3.11 leftover that cannot run current Hermes (requires 3.14).
-    import shutil
-    hermes = next((p for p in (shutil.which("hermes"),) if p and "hermes-agent" not in p.lower()),
-                  str(REPO / "venv" / "Scripts" / "hermes.exe"))
+    # Hermes's own launcher (REPO/.hermes/bin) runs the managed Python; REPO/venv is a stale
+    # Python 3.11 leftover that cannot run current Hermes (requires 3.14).
+    launcher = REPO / ".hermes" / "bin" / ("hermes.CMD" if os.name == "nt" else "hermes")
+    hermes = str(launcher if launcher.exists() else REPO / "venv" / "Scripts" / "hermes.exe")
     say(f"Using {hermes}")
     proc = subprocess.Popen([hermes, "update", "--yes"],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
