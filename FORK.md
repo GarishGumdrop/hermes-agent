@@ -199,21 +199,6 @@ that meet one of the changes below. This file is the list that review works from
 - **If it breaks:** keep generation removal tolerant of undeletable mapped
   files on Windows, and keep one failure from aborting the sweep.
 
-### 15. Security update for the eMudhra CA key compromise
-
-- **Files:** `pm/lock.json` (node 26.12.1, uv 0.13.4, python 3.14.9; the Termux node
-  row stays on 26.4.0 until Termux publishes 26.12.1). The certifi part (pin 2026.10.19
-  and the `exclude-newer-package` exemption in `pyproject.toml`) now matches
-  NousResearch's #142679 line for line and is theirs; it is no longer a fork change.
-- **Purpose:** the private keys of eight eMudhra intermediate CAs were compromised
-  (emudhra.we-have-a-problem.com, 2026-10-20). Node 26.12.1 (NSS 3.131.1 roots) and
-  uv 0.13.4 stop trusting them; the older pins still did. NousResearch's fix for these
-  (#142757) was still open on 2026-10-22. The user requires that his machine's
-  protection take priority over the 3-day release-age rule.
-- **If it breaks:** when NousResearch pins node >= 26.12.1, uv >= 0.13.4 and
-  python >= 3.14.9, retire this change. Never move any of these pins, or certifi,
-  back below those versions.
-
 ## Pending review
 
 ### 10. The slash menu updates when skills or plugins change on disk
@@ -250,6 +235,21 @@ that meet one of the changes below. This file is the list that review works from
   naming this entry.
 
 ## Retired
+
+### 15. Security update for the eMudhra CA key compromise
+
+- **Files:** `pm/lock.json` (node, uv, python pins; the Termux node row stays on
+  26.4.0 and the Termux python row on 3.14.6 until Termux publishes newer builds).
+- **Purpose:** the private keys of eight eMudhra intermediate CAs were compromised
+  (emudhra.we-have-a-problem.com, 2026-10-20). The fork pinned node 26.12.1, uv
+  0.13.4 and python 3.14.9 ahead of NousResearch; the certifi part already matched
+  NousResearch's #142679 and was theirs.
+- **Replaced by:** NousResearch e09f04499a (node 26.12.1), e31fa4cab9 (python
+  3.14.9) and 75a8d6fcf4 (uv 0.13.5, plus regenerated bootstrap pins in
+  `scripts/install.sh` / `scripts/install.ps1`). One row is still the fork's:
+  the Termux uv row stays at 0.13.4, because NousResearch's bump left the Termux
+  row on 0.12.23 and the Termux pool prunes old builds. Never move any of these
+  pins, or certifi, back below node 26.12.1, uv 0.13.4, python 3.14.9.
 
 ### 9. One-shot chats honour `--ignore-rules` and `--safe-mode`
 
