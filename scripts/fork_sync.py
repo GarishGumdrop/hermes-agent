@@ -115,15 +115,24 @@ def _session(prompt, provider, model, tools, source):
 
 
 def ask(prompt, provider, model, tools, source="tool"):
-    """One unattended session through the running gateway; its cost goes to spend.jsonl. If the
-    Anthropic subscription is unavailable (e.g. waiting for its usage reset), DeepSeek on OpenRouter
-    does the job instead."""
-    r = _session(prompt, provider, model, tools, source)
-    if r.get("failed") and (provider, model) != FALLBACK:
-        r = _session(prompt, *FALLBACK, tools, source)
-    if r.get("failed"):
-        raise Hold(f"The {model} session failed: {r.get('error') or 'no reply'}")
-    return str(r.get("final_response") or "").strip(), r.get("estimated_cost_usd") or 0
+    """One unattended session through the running gateway; its cost goes to spend.jsonl. Retries both
+    models with growing waits; if none replies, raises Hold with the real errors (the update then
+    installs the fork as it was and reports the hold)."""
+    # OpenRouter and the backend (paused or restarting during an update) both fail transiently, so
+    # keep trying both models with growing waits (~10 minutes in all) before giving up.
+    errors = []
+    for wait in (0, 15, 30, 60, 120, 240):
+        if wait:
+            say(f"No reply yet; trying again in {wait} seconds.")
+            time.sleep(wait)
+        for prov, mod in dict.fromkeys([(provider, model), FALLBACK]):
+            r = _session(prompt, prov, mod, tools, source)
+            reply = str(r.get("final_response") or "").strip()
+            if not r.get("failed") and reply:
+                return reply, r.get("estimated_cost_usd") or 0
+            errors.append(f"{mod}: {r.get('error') or 'empty reply'}")
+    raise Hold(f"No model replied after {len(errors)} attempts over about 10 minutes. "
+               f"Last errors: {'; '.join(errors[-2:])}")
 
 
 def your_changes():
