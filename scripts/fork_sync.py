@@ -266,6 +266,16 @@ def main():
         print("Started the update through Task Scheduler. Its report will appear as a session when it finishes.")
         return
     sys.stdout.reconfigure(errors="replace")
+    # The task starts even while an earlier run's window is still open (its -NoExit window would
+    # otherwise block every later run); this OS lock keeps two runs from overlapping.
+    import msvcrt
+    lock = open(STATE / "run.lock", "a+")
+    try:
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        say("Another update run is still in progress, so this one stops here.")
+        return 0
     say("Hermes nightly update started.")
     record(f"Run started {datetime.now():%Y-%m-%d %H:%M}.")
     hold = HOME / "update-hold.json"
