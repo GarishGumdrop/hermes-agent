@@ -1,5 +1,6 @@
-"""Nightly fork update (fork change 11), run by Task Scheduler through Hermes's launcher:
-`.hermes/bin/hermes.CMD --run-module scripts.fork_sync --from-task`. The launcher first builds the
+"""Nightly fork update (fork change 11), run by Task Scheduler through Hermes's checkout
+launcher (`.hermes/bin/hermes.exe`, or `hermes.CMD` where that is what the install published)
+with `--run-module scripts.fork_sync --from-task`. The launcher first builds the
 Python environment for the checkout's lock files if it is missing; otherwise the first session this
 script asks the backend for would have to build it within the backend's 60-second start limit for
 a session process, and fail.
@@ -49,7 +50,23 @@ FALLBACK = ("openrouter", "deepseek/deepseek-v4.1-flash-1017")
 REVIEW = ("openrouter", "meta/muse-spark-1.3-contributor")
 DESKTOP = REPO / "apps" / "desktop" / "release"
 TASK = "Hermes Auto Update"
-LAUNCHER = REPO / ".hermes" / "bin" / ("hermes.CMD" if os.name == "nt" else "hermes")
+
+
+def _launcher() -> Path:
+    """The checkout's Hermes launcher: hermes.exe where publication mints one, else hermes.CMD.
+
+    NousResearch's launcher fixes (2026-10-22) mint hermes.exe again through the store Python's
+    own pip, so installs updated past them may hold only the .exe while older ones hold only the
+    .cmd; a stale .cmd beside a new .exe is also left alone. Both run the same entry points.
+    """
+    bindir = REPO / ".hermes" / "bin"
+    if os.name == "nt":
+        exe = bindir / "hermes.exe"
+        return exe if exe.exists() else bindir / "hermes.CMD"
+    return bindir / "hermes"
+
+
+LAUNCHER = _launcher()
 # Fork change 16: every model session this script starts says it was started by the nightly update
 # ("Started by", hermes_cli/internal_sessions.py) and gets a plain title naming the run and the step,
 # not one a model writes from the prompt. STAMP is this run's start; the report process is given it.

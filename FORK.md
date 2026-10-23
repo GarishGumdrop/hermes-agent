@@ -133,7 +133,8 @@ that meet one of the changes below. This file is the list that review works from
 
 - **Files:** `scripts/fork_sync.py`, `scripts/fork_sync/triage.md`, `scripts/fork_sync/review.md`
   (all new). Task Scheduler's "Hermes Auto Update" runs the script through Hermes's launcher
-  (`.hermes\bin\hermes.CMD --run-module scripts.fork_sync --from-task`) inside
+  (`.hermes\bin\hermes.exe --run-module scripts.fork_sync --from-task`, falling back to
+  `hermes.CMD` where that is what the install published) inside
   `powershell.exe -NoExit`, so its progress window stays open until the user closes it. The task's
   multiple-instances policy is Parallel, so an open window never blocks the next night's run; an OS
   lock (`fork-sync/run.lock`) stops a second run while one is in progress.
