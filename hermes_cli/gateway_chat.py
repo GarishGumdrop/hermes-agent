@@ -209,6 +209,9 @@ async def run_gateway_chat(args, emitter=None):
                 policy["title"] = title
             policy.update(env_launch_flags())
             policy.update(client_env_policy(parameters))
+            # Fork change 16: record what started this session (hermes_cli/internal_sessions.py).
+            from hermes_cli.internal_sessions import launch_provenance
+            policy.update(launch_provenance(args, parameters))
             cwd = await asyncio.to_thread(_caller_cwd, args)
             if "cwd" in parameters:
                 policy["cwd"] = cwd

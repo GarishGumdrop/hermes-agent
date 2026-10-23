@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 
+import {
+  $internalRefreshToken,
+  applyInternalSlice,
+  INTERNAL_SECTION_LIMIT
+} from '@/fork/internal-sessions/store'
 import { getApiRequestConnection, listAllProfileSessions, listSidebarSessions, type SessionInfo } from '@/hermes'
 import { sameCronSignature } from '@/lib/session-signatures'
 import {
@@ -376,7 +381,10 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
             recentsExclude: SIDEBAR_EXCLUDED_SOURCES,
             cronLimit: CRON_SECTION_LIMIT,
             messagingLimit: MESSAGING_SECTION_LIMIT,
-            messagingExclude: MESSAGING_EXCLUDED_SOURCES
+            messagingExclude: MESSAGING_EXCLUDED_SOURCES,
+            // Fork change 16: the Internal section (src/fork/internal-sessions).
+            internalLimit: INTERNAL_SECTION_LIMIT,
+            internalToken: $internalRefreshToken.get()
           })
 
         let activationEpoch = gatewayActivationEpoch()
@@ -496,6 +504,8 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
           setMessagingTruncated(prev =>
             messagingErrors?.length ? prev : result.messaging.sessions.length >= MESSAGING_SECTION_LIMIT
           )
+          // Fork change 16: the Internal section's slice, under the same removal guards.
+          applyInternalSlice(result.internal, rows => dropRemovalRaced(dropTombstoned(rows), removalSnapshot))
         }
       } catch (error) {
         if (owns() && showLoading) {
@@ -524,6 +534,9 @@ export function useSessionListActions({ profileScope }: UseSessionListActionsArg
     bumpSessionsLimit()
     await refreshSessions()
   }, [refreshSessions])
+
+  // Fork change 16: the Internal section's switch asks for a fresh list.
+  useEffect(() => $internalRefreshToken.listen(() => void refreshSessions()), [refreshSessions])
 
   // A filter searches the loaded page, so switching one on has to deepen the
   // page — otherwise "merged PRs" answers for the last 50 rows and reads as

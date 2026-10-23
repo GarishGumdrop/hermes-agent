@@ -274,8 +274,13 @@ def _cmd_import(args):
 # -- handlers that receive an open SessionDB ----------------------------------
 
 def _default_exclude(args):
-    """Hide third-party tool sessions by default, but honour explicit --source."""
-    return None if getattr(args, "source", None) else ["tool"]
+    """Hide internal sessions by default (fork change 16, hermes_cli/internal_sessions.py: programs,
+    one-off commands, subagent runs, kanban workers, editors), but honour explicit --source and the
+    ``sessions.show_internal`` switch."""
+    if getattr(args, "source", None):
+        return None
+    from hermes_cli.internal_sessions import internal_exclusions
+    return internal_exclusions() or None
 
 
 def _surface_reader(db):
@@ -289,11 +294,15 @@ def _cmd_list(db, args):
     # LIMIT lives in the query, so probe one row past the cap: it is the only way to know the
     # page was cut without a second COUNT query (``--limit 0`` is ``LIMIT 0``: no rows, no probe).
     limit = args.limit
+    # Fork change 16: the shared internal-session rule (hermes_cli/internal_sessions.py) and a line
+    # saying how many sessions it left out.
+    from hermes_cli.internal_sessions import terminal_list_note, terminal_list_scope
     sessions = _surface_reader(db).list_sessions_rich(
-        source=args.source, exclude_sources=_default_exclude(args), limit=limit + 1 if limit > 0 else limit,
+        source=args.source, limit=limit + 1 if limit > 0 else limit, **terminal_list_scope(args.source),
     )
     truncated = limit > 0 and len(sessions) > limit
     sessions = sessions[:limit] if truncated else sessions
+    internal_note = terminal_list_note(db, args.source)
 
     # Workspace filter: workspace key (git repo root, else cwd) — path substring or exact basename.
     _ws_filter = (getattr(args, "workspace", None) or "").strip()
@@ -305,6 +314,8 @@ def _cmd_list(db, args):
         ]
     if not sessions:
         print("No sessions found.")
+        if internal_note:
+            print(internal_note)
         return
 
     # Workspace column only when some session carries a key (or when filtering): unbound listings read as before.
@@ -337,6 +348,8 @@ def _cmd_list(db, args):
         print(fmt(s))
     if truncated:
         print_truncated(None, f"use --limit {limit * 2} to see more")
+    if internal_note:
+        print(internal_note)
 
 
 # -- export -----------------------------------------------------------------

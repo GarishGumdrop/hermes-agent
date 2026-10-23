@@ -29,6 +29,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, Query
 
 from hermes_cli.session_listing import subagent_listing_scope
+# Fork change 16: the Internal section's slice and the sessions.show_internal switch.
+from hermes_cli.internal_sessions import internal_slice, main_list_scope, show_internal_sessions
 from hermes_cli.web_deps import late
 from hermes_cli.config import get_process_hermes_home
 from hermes_cli.profiles import ProfileIdentitySettlementPending
@@ -522,7 +524,8 @@ def get_profiles_sessions(
 @_sidebar_singleflight_cache
 def get_profiles_sessions_sidebar(
     recents_profile: str = "all", recents_limit: int = 20, recents_exclude: str | None = None,
-    cron_limit: int = 50, messaging_limit: int = 100, messaging_exclude: str | None = None):
+    cron_limit: int = 50, messaging_limit: int = 100, messaging_exclude: str | None = None,
+    internal_limit: int = 0, internal_token: str | None = None):
     """Batched sidebar session slices (recents / cron / messaging) — one profile-DB open per
     refresh instead of three ``/api/profiles/sessions`` calls. Same row projection and 300s
     active heuristic as the per-slice endpoint; all slices use ``min_messages=1`` /
@@ -533,7 +536,13 @@ def get_profiles_sessions_sidebar(
     cronjobs; ``all`` asks for everything.
 
     See #42651, #65710, #70629.
+
+    Fork change 16: ``internal_limit`` > 0 adds the ``internal`` slice (the sessions the main
+    list leaves out, for the sidebar's Internal section), and ``sessions.show_internal`` puts
+    those sessions into the main list instead. ``internal_token`` only varies the response
+    cache key, so a refresh right after the switch flips is never served the old answer.
     """
+    del internal_token
     targets = _profile_targets("GET /api/profiles/sessions/sidebar")
 
     recents_scope = (recents_profile or "all").strip() or "all"
@@ -550,26 +559,32 @@ def get_profiles_sessions_sidebar(
     errors: list[dict[str, str]] = []
     now = time.time()
 
-    def _slice(db, key, recents_subagents=(False, None)):
+    def _slice(db, key, recents_scope=None):
         source, exclude = slice_scope[key]
-        # Only recents takes subagent runs (sessions.show_subagents); cron/messaging keep shape.
-        include_subagents, exclude = recents_subagents if key == "recents" else (False, exclude)
+        # Only recents takes subagent runs (sessions.show_subagents) and the internal-session
+        # switch (fork change 16); cron/messaging keep shape.
+        scope = (recents_scope if key == "recents" and recents_scope else
+                 {"include_subagents": False, "exclude_sources": exclude or None, "min_message_count": 1})
         # include_pinned: a pinned conversation must reach the sidebar even when it has aged
         # past the window, or its Pinned row renders empty.
         return db.list_sessions_rich(
-            source=source, exclude_sources=exclude or None, limit=cap[key], offset=0,
-            min_message_count=1, include_archived=False, archived_only=False,
-            order_by_last_active=True, compact_rows=True, include_pinned=True,
-            include_subagents=include_subagents)
+            source=source, limit=cap[key], offset=0,
+            include_archived=False, archived_only=False,
+            order_by_last_active=True, compact_rows=True, include_pinned=True, **scope)
 
-    def _build_slices(db, cache_key, recents_subagents):
+    def _build_slices(db, cache_key, recents_scope, internal_cap):
         # ``usage`` is aggregated in SQL rather than over the recents window: the window is a
         # page, and a total that shrank when you scrolled would be worse than no total at all.
-        slices = {"recents": _slice(db, "recents", recents_subagents), "usage": db.usage_totals(),
-                  "cron": _slice(db, "cron"), "messaging": _slice(db, "messaging")}
+        slices = {"recents": _slice(db, "recents", recents_scope), "usage": db.usage_totals(),
+                  "cron": _slice(db, "cron"), "messaging": _slice(db, "messaging"),
+                  "internal": (internal_slice(db, internal_cap) if internal_cap
+                               else {"sessions": [], "total": 0})}
         _sidebar_profile_cache_put(cache_key, slices)
         return slices
 
+    internal_rows: list[dict[str, Any]] = []
+    internal_total = 0
+    internal_shown: dict[str, bool] = {}
     scanned = []
     contributed: set = set()
     for name, home in targets:
@@ -579,15 +594,21 @@ def get_profiles_sessions_sidebar(
         db_path = _profile_state_db(home)
         if not db_path.exists():
             continue
-        recents_subagents = subagent_listing_scope(home, exclude_sources=recents_exclude_list or None)
+        include_subagents, recents_excluded = subagent_listing_scope(
+            home, exclude_sources=recents_exclude_list or None)
+        show_internal = show_internal_sessions(home)
+        internal_shown[name] = show_internal
+        main_scope = main_list_scope(show_internal, include_subagents, recents_excluded)
+        internal_cap = 0 if show_internal else min(max(internal_limit, 0), 500)
         profile_cache_key = (str(db_path), _sidebar_db_fingerprint(db_path), cap["recents"],
                              tuple(recents_exclude_list), cap["cron"], cap["messaging"],
-                             tuple(messaging_exclude_list), recents_subagents[0])
+                             tuple(messaging_exclude_list), include_subagents, show_internal,
+                             internal_cap)
         slices = _sidebar_profile_cache_get(profile_cache_key)
         if slices is None:
             slices = _read_profile_db(
                 name, home, errors,
-                lambda db: _build_slices(db, profile_cache_key, recents_subagents))
+                lambda db: _build_slices(db, profile_cache_key, main_scope, internal_cap))
             if slices is None:
                 continue
         if _slice_has_rows(slices):
@@ -600,6 +621,9 @@ def get_profiles_sessions_sidebar(
         profile_totals[name] = slices["usage"]
         for key in slice_scope:
             rows[key].extend(_tag_rows(slices[key], name, now))
+        internal = slices.get("internal") or {}
+        internal_rows.extend(_tag_rows(list(internal.get("sessions") or []), name, now))
+        internal_total += int(internal.get("total") or 0)
 
     def _window(key: str) -> list[dict[str, Any]]:
         rows[key].sort(key=_recency, reverse=True)
@@ -639,6 +663,15 @@ def get_profiles_sessions_sidebar(
         "cron": {"sessions": _window("cron")},
         "messaging": {"sessions": _window("messaging"), "total": len(rows["messaging"])},
         "errors": errors, "storage": storage}
+    if internal_limit > 0:
+        # Fork change 16: newest first, capped; ``total`` counts every internal session so the
+        # section header never understates what is left out of the main list.
+        internal_rows.sort(key=_recency, reverse=True)
+        internal_window = internal_rows[:min(max(internal_limit, 0), 500)]
+        _strip_session_list_rows(internal_window)
+        shown = internal_shown.get(recents_scope, any(internal_shown.values()))
+        body["internal"] = {"sessions": internal_window, "total": internal_total,
+                            "shown_in_main": bool(shown)}
     # A sibling profile still listed does not make the failed profile's absence
     # a successful empty slice. Stamp that profile as a failed load with Retry.
     failed = _profiles_failed(retryable)

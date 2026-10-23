@@ -8891,6 +8891,30 @@
             ],
             "default": null,
             "title": "Client Env"
+          },
+          "launched_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Launched From"
+          },
+          "launched_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Launched By"
           }
         },
         "title": "CanonicalCreateParams",

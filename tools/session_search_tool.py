@@ -21,6 +21,16 @@ from hermes_time import safe_strftime
 # Hidden from browsing/searching — integrations (HERMES_SESSION_SOURCE=tool), delegate
 # subagent runs, kanban workers are not the user's history.
 _HIDDEN_SESSION_SOURCES = ("kanban", "subagent", "tool")
+
+
+def _hidden_session_sources() -> tuple[str, ...]:
+    """Fork change 16: the sources every session list leaves out (hermes_cli/internal_sessions.py),
+    so search finds what the user's lists show; none while ``sessions.show_internal`` is on."""
+    try:
+        from hermes_cli.internal_sessions import internal_exclusions
+        return tuple(internal_exclusions())
+    except Exception:
+        return _HIDDEN_SESSION_SOURCES
 # Searchable but DEMOTED below interactive sessions: cron vocabulary dominates bare
 # BM25 and starves out the user's own sessions ("recall blindness").
 # Automation sources that are kept searchable but DEMOTED below interactive sessions in discover ranking.
@@ -287,7 +297,7 @@ def _title_match_result(db, query: str, current_lineage_root: Optional[str]) -> 
         return None
     session_meta = _quiet(lambda: db.get_session(lineage_root) or db.get_session(session_id), None,
                           "get_session failed for title match %s", session_id) or {}
-    if session_meta.get("source") in _HIDDEN_SESSION_SOURCES:
+    if session_meta.get("source") in _hidden_session_sources():
         return None
     messages = _quiet(lambda: db.get_messages(session_id), [], "get_messages failed for title match %s", session_id)
     anchor_id = messages[0].get("id") if messages else None
@@ -368,7 +378,7 @@ def _discover(db, query: str, role_filter: Optional[list[str]], limit: int, sort
             title_result = None
     raw_results, err = _loud(lambda: db.search_messages(
         query=query, role_filter=role_filter or ["user", "assistant"],
-        exclude_sources=list(_HIDDEN_SESSION_SOURCES), limit=_DISCOVER_SCAN_LIMIT, offset=0, sort=sort,
+        exclude_sources=list(_hidden_session_sources()) or None, limit=_DISCOVER_SCAN_LIMIT, offset=0, sort=sort,
         fields=_DISCOVER_SEARCH_FIELDS, after_ts=after_ts, before_ts=before_ts), "FTS5 search failed: %s", "Search failed")
     if err:
         return err
@@ -491,7 +501,7 @@ def _list_recent_sessions(db, limit: int, current_session_id: str | None = None,
             raise RuntimeError("session database does not support bounded recent-session browse")
         sessions = bounded_list(
             limit=limit + 15,  # extra so we can skip current / compression roots
-            exclude_sources=list(_HIDDEN_SESSION_SOURCES), timeout_seconds=3.0)
+            exclude_sources=list(_hidden_session_sources()) or None, timeout_seconds=3.0)
         current_root, has_compression_hop = (
             _resolve_to_parent(db, current_session_id) if current_session_id else (None, False))
         # Compression continuation: the root was summarised into the live child, so hide

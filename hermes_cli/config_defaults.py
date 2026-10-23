@@ -2305,6 +2305,13 @@ DEFAULT_CONFIG = {
         # List delegate_task subagent runs in session lists (desktop sidebar, dashboard, session.list),
         # nested under their parent. Off by default: they are machinery, not conversations.
         "show_subagents": False,
+        # Fork change 16 (hermes_cli/internal_sessions.py): list internal sessions (programs, one-off
+        # commands, subagent runs, bot chats, empty sessions) in the main session lists instead of
+        # only in the desktop sidebar's Internal section. The section's header switch sets it.
+        "show_internal": False,
+        # Fork change 16: the nightly update deletes program and one-off-command sessions (sources
+        # tool and oneshot) inactive for this many days; pinned and archived ones are kept. 0 keeps all.
+        "internal_retention_days": 30,
         # VACUUM after a prune that deleted rows (SQLite never reclaims disk on DELETE). VACUUM
         # blocks writes (~seconds per 100MB), so it runs only at startup, only when ≥1 session was
         # deleted AND freelist/page_count > 25%.

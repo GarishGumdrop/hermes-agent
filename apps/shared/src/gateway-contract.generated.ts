@@ -4953,6 +4953,8 @@ export interface CanonicalCreateParams {
   run_budget?: number | null
   verbose?: boolean
   client_env?: Record<string, string> | null
+  launched_from?: string | null
+  launched_by?: string | null
 }
 export interface CanonicalSnapshot {
   session_id: string

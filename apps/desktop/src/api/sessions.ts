@@ -1,3 +1,4 @@
+import type { InternalSessionsSlice } from '@/fork/internal-sessions/store'
 import { isMissingRestEndpoint, isUnroutedRestPath } from '@/lib/gateway-rpc'
 import { maybeBackfillLegacySessionOwners } from '@/lib/legacy-session-owner-backfill'
 import { stampRowsWithOwningConnection } from '@/lib/session-owner-stamp'
@@ -219,6 +220,9 @@ export interface SidebarSessionsResponse {
   /** `{profile: 'corrupt'}` for each profile whose state.db the backend has found
    *  structurally damaged. Absent from older backends. */
   storage?: Record<string, 'corrupt'>
+  /** Fork change 16: the sessions the main list leaves out (src/fork/internal-sessions).
+   *  Absent from backends without the change and when not asked for. */
+  internal?: InternalSessionsSlice
 }
 
 export interface SidebarSessionsRequest {
@@ -228,6 +232,10 @@ export interface SidebarSessionsRequest {
   cronLimit: number
   messagingLimit: number
   messagingExclude: string[]
+  /** Fork change 16: rows for the Internal section (0 or absent: none). */
+  internalLimit?: number
+  /** Fork change 16: changes when the internal-session switch flips (response cache key). */
+  internalToken?: number
 }
 
 // The batched /sidebar endpoint shipped later than the per-slice route, so a
@@ -329,6 +337,11 @@ export async function listSidebarSessions(req: SidebarSessionsRequest): Promise<
     params.set('messaging_exclude', req.messagingExclude.join(','))
   }
 
+  if (req.internalLimit) {
+    params.set('internal_limit', String(req.internalLimit))
+    params.set('internal_token', String(req.internalToken ?? 0))
+  }
+
   let result: SidebarSessionsResponse
 
   try {
@@ -368,7 +381,15 @@ export async function listSidebarSessions(req: SidebarSessionsRequest): Promise<
     },
     errors: result.errors,
     profiles_failed: result.profiles_failed,
-    storage: result.storage
+    storage: result.storage,
+    ...(result.internal
+      ? {
+          internal: {
+            ...result.internal,
+            sessions: stampActiveConnectionOwner(result.internal.sessions ?? [])
+          }
+        }
+      : {})
   }
 }
 

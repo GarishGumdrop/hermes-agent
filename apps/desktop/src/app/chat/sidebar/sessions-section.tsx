@@ -7,6 +7,7 @@ import { type NewSessionSplitHandler, startNewSessionDrag } from '@/app/chat/new
 import { SidebarPanelLabel } from '@/app/shell/sidebar-label'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { SidebarGroup, SidebarGroupContent } from '@/components/ui/sidebar'
+import { groupEntriesByOrigin } from '@/fork/internal-sessions/group'
 import type { HermesGitWorktree } from '@/global'
 import type { SessionInfo } from '@/hermes'
 import { useI18n } from '@/i18n'
@@ -181,7 +182,10 @@ interface SidebarSessionsSectionProps {
   // `status` splits into WORKING / DONE under the same separators. `none` for
   // pinned, messaging groups, and the project overview, where the order isn't
   // strictly by recency so a bucket would be misleading.
-  grouping?: 'date' | 'none' | 'status'
+  grouping?: 'date' | 'none' | 'origin' | 'status'
+  // Fork change 16: the heading each row is listed under when `grouping` is 'origin'
+  // (src/fork/internal-sessions/group.ts).
+  originOf?: (session: SessionInfo) => string
   // Keep the caller's row order instead of re-sorting by group recency
   // (defaults to `pinned`, the only pre-ordered caller). The search results
   // set it too: their order is the backend's ranking (exact id matches
@@ -238,6 +242,7 @@ export function SidebarSessionsSection({
   dndSensors,
   showProfileTags = false,
   grouping = 'none',
+  originOf,
   preserveOrder = pinned,
   card = false
 }: SidebarSessionsSectionProps) {
@@ -432,10 +437,12 @@ export function SidebarSessionsSection({
               entry => hasLiveTurn(dotStates[entry.session.id] ?? 'idle'),
               statusDividerLabels
             )
-          : toSessionRows(displayEntries)
+          : grouping === 'origin' && originOf
+            ? groupEntriesByOrigin(displayEntries, originOf)
+            : toSessionRows(displayEntries)
 
     return manualOrderIds?.length ? orderRowsWithinGroups(rows, manualOrderIds) : rows
-  }, [grouping, displayEntries, dotStates, manualOrderIds, statusDividerLabels])
+  }, [grouping, displayEntries, dotStates, manualOrderIds, originOf, statusDividerLabels])
 
   // Closed date/status buckets keep their divider and drop the sessions under
   // it. Same array when nothing is collapsed so the virtualizer's rows ref

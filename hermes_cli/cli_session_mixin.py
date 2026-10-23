@@ -380,13 +380,14 @@ class CLISessionMixin:
         if not self._session_db:
             return []
         try:
+            from hermes_cli.internal_sessions import internal_exclusions
             from hermes_cli.session_listing import query_session_listing
-            from hermes_state_sessions import INTERNAL_LISTING_SOURCES
 
             return query_session_listing(
                 self._session_db, source="cli", current_session_id=self.session_id,
                 include_all_sources=False, include_unnamed=True, limit=limit,
-                exclude_sources=list(INTERNAL_LISTING_SOURCES))
+                # Fork change 16: the shared internal-session rule (hermes_cli/internal_sessions.py).
+                exclude_sources=internal_exclusions())
         except Exception:
             return []
 

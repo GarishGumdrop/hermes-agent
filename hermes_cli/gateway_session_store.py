@@ -174,6 +174,7 @@ class GatewaySessionStore:
         if title:
             params["title"] = title
         params.update(self.client_env())
+        params.update(self.provenance())
         snapshot = self.call("session.create", request_id=uuid.uuid4().hex, **params)
         warning = (snapshot.get("info") or {}).get("config_warning")
         if warning:
@@ -188,6 +189,14 @@ class GatewaySessionStore:
             contract = described.get("session_create") if isinstance(described, dict) else None
             self._create_parameters = list((contract or {}).get("parameters") or [])
         return client_env_policy(self._create_parameters)
+
+    def provenance(self):
+        """Fork change 16 (hermes_cli/internal_sessions.py): what started this session, for the
+        desktop sidebar's "Started by"; only the options the gateway advertises."""
+        from hermes_cli.internal_sessions import launch_provenance
+        if self._create_parameters is None:
+            self.client_env()  # reads the advertised options (one runtime.describe per store)
+        return launch_provenance(None, self._create_parameters)
 
     def branch(self, session_id, title=None):
         """``session.mutate branch``: the gateway forks the whole active transcript into a child it
@@ -549,6 +558,7 @@ def create_titled_session(title):
     try:
         store = session_store()
         params.update(store.client_env())
+        params.update(store.provenance())  # fork change 16
         snapshot = store.call("session.create", request_id=uuid.uuid4().hex, title=title, **params)
     except GatewayClientError as exc:
         logger.warning("Failed to create titled session %r on the gateway: %s", title, exc)

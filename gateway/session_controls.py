@@ -443,6 +443,10 @@ class AuthorityConnection:
         hidden = params.pop('hidden', False)
         if type(hidden) is not bool:
             raise RuntimeStoreError('invalid_params', field='hidden', detail='must be a boolean')
+        # Fork change 16: what started the session ("Started by"); written after creation, never
+        # part of the frozen launch request (hermes_cli/internal_sessions.py).
+        from hermes_cli.internal_sessions import pop_provenance, record_provenance
+        provenance = pop_provenance(params)
         ref = title and resolve_titled_session(self.authority, self.actor, title, missing_ok=True)
         if (not ref and title == 'Bot Chat'
                 and not any(params.get(name) is True for name in BYPASS_FIELDS)
@@ -483,6 +487,9 @@ class AuthorityConnection:
                 await tracked_write(self.authority, partial(title_new_session, self.authority, ref, title))
             if hidden:
                 await tracked_write(self.authority, partial(self.authority.db.set_session_hidden, ref.session_id, True))
+            if provenance:
+                await tracked_write(self.authority, partial(
+                    record_provenance, self.authority.db, ref.session_id, provenance))
         return await self.resume(ref, {})
 
     async def ping(self, ref, params):
@@ -500,7 +507,8 @@ class AuthorityConnection:
                 'authority_epoch': self.authority.epoch,
                 'capabilities': ['durable-admission-v1', 'event-replay-v1', 'local-cli-create-v1', 'acp-editor-policy-v1', 'acp-session-mcp-v1'],
                 'session_create': {'sources': sorted(SURFACES),
-                                   'parameters': sorted(CREATE_FIELDS | {'title'})},
+                                   # Fork change 16: launched_from / launched_by ("Started by").
+                                   'parameters': sorted(CREATE_FIELDS | {'title', 'launched_from', 'launched_by'})},
                 # Main's ``gateway.ready.skin``: the canonical client's own ready carries it.
                 'skin': await asyncio.to_thread(resolved_skin)}
 

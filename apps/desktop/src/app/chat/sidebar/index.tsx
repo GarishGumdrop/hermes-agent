@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Tip, TipKeybindLabel } from '@/components/ui/tooltip'
 import { useContributions } from '@/contrib/react/use-contributions'
+import { InternalSessionsSection } from '@/fork/internal-sessions/section'
 import { type SessionInfo, type SessionSearchResult } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { comboTokens } from '@/lib/keybinds/combo'
@@ -2052,6 +2053,20 @@ export function ChatSidebar({
                 onToggle={() => setSidebarCronOpen(!cronOpen)}
                 onTriggerJob={onTriggerCronJob}
                 open={cronOpen}
+              />
+            )}
+
+            {/* Fork change 16: the sessions the main list leaves out (src/fork/internal-sessions). */}
+            {!trimmedQuery && !worktreeGroupingActive && showsAdvancedChrome && (
+              <InternalSessionsSection
+                activeSessionId={activeSidebarSessionId}
+                onArchiveSession={onArchiveSession}
+                onDeleteSession={onDeleteSession}
+                onResumeSession={onResumeSession}
+                onTogglePin={pinSession}
+                onToggleUnread={toggleUnread}
+                profileScope={profileScope}
+                showProfileTags={showAllProfiles}
               />
             )}
           </div>

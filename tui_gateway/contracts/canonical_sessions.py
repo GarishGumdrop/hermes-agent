@@ -53,6 +53,11 @@ class CanonicalCreateParams(ProfileParams):
     # A shell-launched client's allowlisted environment (HERMES_* behaviour values, toolchain PATH/venv),
     # applied to this session only; never echoed in ``launch_request``.
     client_env: dict[str, str] | None = None
+    # Fork change 16 (hermes_cli/internal_sessions.py): what started the session, for the desktop
+    # sidebar's Internal section ("Started by"): the conversation whose agent ran the command and a
+    # program's own name. Written to the session record after creation; never part of the launch.
+    launched_from: str | None = None
+    launched_by: str | None = None
 
 
 class CanonicalResumeParams(ProfileParams):

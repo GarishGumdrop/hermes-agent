@@ -345,10 +345,16 @@ def _project_tree_inputs(
     ``include_discovered`` is the zero-session-repo overview tier; drill-in skips it (and
     the distinct-cwd scan + git probes) on that per-turn path."""
     # compact_rows: selecting the system-prompt blob only to drop it costs tens of MB of reads.
+    # Fork change 16: the same internal-session rule as the sidebar (hermes_cli/internal_sessions.py),
+    # which also replaces _PROJECT_TREE_EXCLUDED_SOURCES here.
+    import os
+
+    from hermes_cli.internal_sessions import project_tree_scope
+    db_path = getattr(db, "db_path", None)
     rows = db.list_sessions_rich(
-        limit=session_limit, offset=0, order_by_last_active=True, min_message_count=1,
-        include_children=False, exclude_sources=_PROJECT_TREE_EXCLUDED_SOURCES,
-        include_archived=False, compact_rows=True)
+        limit=session_limit, offset=0, order_by_last_active=True,
+        include_children=False, include_archived=False, compact_rows=True,
+        **project_tree_scope(os.path.dirname(str(db_path)) if db_path else None))
     sessions = [_project_tree_row(r) for r in rows]
     # Parallel-warm the git cache so build_tree's resolver doesn't cold-probe each cwd in turn.
     git_probe.warm_roots(s["cwd"] for s in sessions if s.get("cwd"))

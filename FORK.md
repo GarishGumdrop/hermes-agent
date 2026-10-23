@@ -150,6 +150,12 @@ that meet one of the changes below. This file is the list that review works from
   could not be written become notes in `update-notes.json`; nothing fails silently.
 - **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat`, `pm.environments.committed_venv`
   or `tools/skills_sync.py` changed; adapt the calls in the script.
+- **Its sessions (change 16):** every model session is titled "Nightly update <day> <month> <HH:MM>:
+  <step>" (", attempt N" from the second attempt) and records `launched_by` "Nightly update"; the
+  run ends with `cleanup()`, which deletes `tool` and `oneshot` sessions inactive for longer than
+  `sessions.internal_retention_days` (default 30, 0 = keep; pinned and archived ones are kept) one
+  by one with `hermes sessions delete` (prune cannot: it deletes only ended sessions, and gateway
+  sessions started by `run_gateway_chat` never end), and puts every outcome in the report.
 
 ### 12. Assistant code blocks wrap long lines instead of scrolling sideways
 
@@ -198,6 +204,47 @@ that meet one of the changes below. This file is the list that review works from
   rest.
 - **If it breaks:** keep generation removal tolerant of undeletable mapped
   files on Windows, and keep one failure from aborting the sweep.
+
+### 16. Internal sessions are listed, labelled and cleaned up instead of silently hidden
+
+- **Files:**
+  - Rule and lists: `hermes_cli/internal_sessions.py` (new: what counts as internal, the Internal
+    section's rows and count, the `sessions.show_internal` switch, "Started by" recording);
+    `hermes_cli/web_routers/profiles.py` (sidebar endpoint: `internal_limit` / `internal_token`, the
+    `internal` slice, recents scope from `main_list_scope`); `tui_gateway/methods_projects.py`
+    (project view, `project_tree_scope`); `hermes_cli/sessions_cmd.py` (`hermes sessions list`,
+    `terminal_list_scope`, and a line saying how many it left out); `hermes_cli/cli_session_mixin.py`
+    and `hermes_cli/console_engine.py` (`/resume` and console lists, `internal_exclusions`);
+    `hermes_cli/config_defaults.py` (`sessions.show_internal`, `sessions.internal_retention_days`);
+    `tui_gateway/methods_config_set.py` (config.set accepts `sessions.show_internal`).
+  - Started by: `tui_gateway/contracts/canonical_sessions.py` (`launched_from`, `launched_by` on
+    `CanonicalCreateParams`, regenerated into `apps/shared/src/gateway-contract.generated.ts` and
+    `.openrpc.json` by `scripts/gen_gateway_contracts.py`); `gateway/session_controls.py` (`_create`
+    takes them out of the launch request and writes them to the new session's model_config as
+    `_launched_from` / `_launched_by`; `describe` advertises them); `hermes_cli/gateway_chat.py` and
+    `hermes_cli/gateway_session_store.py` (both client routes send them, only when advertised).
+  - Desktop: `apps/desktop/src/fork/internal-sessions/` (new: `store.ts`, `group.ts`,
+    `section.tsx`); hooks in `src/api/sessions.ts` (request and response fields),
+    `src/app/session/hooks/use-session-list-actions.ts` (asks for and stores the slice; refreshes when
+    the switch flips), `src/app/chat/sidebar/sessions-section.tsx` (`grouping: 'origin'`) and
+    `src/app/chat/sidebar/index.tsx` (mounts the section after Cron jobs).
+  - Nightly update: `scripts/fork_sync.py` (see change 11).
+  - Tests: `tests/hermes_cli/test_internal_sessions.py`, `tests/gateway/fixtures/launch_provenance_probe.py`
+    (a real daemon and both client routes).
+- **Purpose:** Hermes saves every model session, and each list (sidebar, project view, terminal
+  lists, session search) hid a different set of them without saying so, while nothing recorded what
+  started a session. Now one rule decides what is internal: sources `tool`, `oneshot`, `subagent`,
+  `kanban`, `acp`; hidden rows (Bot Mode); empty rows; subagent runs. Cron keeps its own section. The
+  sidebar shows internal sessions in an "Internal sessions" section with their count, grouped under
+  what started them; the section's switch (`sessions.show_internal`) lists them in the main lists
+  instead; `hermes sessions list` says how many it left out. `hermes chat` records the conversation
+  whose agent ran the command (`HERMES_SESSION_ID`) and a program's own name (`HERMES_LAUNCHED_BY`, or
+  `launched_by` on the arguments).
+- **If it breaks:** usually NousResearch changed the sidebar endpoint's slices, the arguments of
+  `list_sessions_rich`, the `session.create` contract or a client's creation path. Keep: one rule in
+  `internal_sessions.py` used by every list; the `internal` slice and its count; both provenance
+  fields in the closed create contract (a client that sends a field the contract lacks is refused);
+  both client routes sending them only when the gateway advertises them.
 
 ## Pending review
 
