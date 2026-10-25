@@ -47,15 +47,6 @@ that meet one of the changes below. This file is the list that review works from
   startup before windows open, and keep the preload block after the app's own
   `exposeInMainWorld('hermesDesktop', ...)` call.
 
-### 3. High-contrast override for the light theme
-
-- **Files:** `apps/desktop/public/high-contrast-override.css` (new file); one
-  `<link rel="stylesheet">` line in `apps/desktop/index.html`.
-- **Purpose:** the user has weak eyesight. The stylesheet raises text contrast
-  and removes faint grey text in the light theme. It must load after the app's
-  own styles so it wins.
-
-
 ### 4. Separate approval switch for edits to existing skills
 
 - **Files:** `tools/write_approval.py` (`EDITS_CONFIG_KEY`, `skill_edit_approval_enabled`,
