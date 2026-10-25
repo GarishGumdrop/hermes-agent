@@ -95,20 +95,6 @@ that meet one of the changes below. This file is the list that review works from
   that SOUL.md, the profile or memory already say.
 - **If it breaks:** keep the three bullets in whatever block lists what the reviewer must not capture.
 
-### 7. Configurable skill description length, checked before a new skill is staged
-
-- **Files:** `agent/skill_utils.py` (`skill_prompt_desc_limit()`, used by the index truncation);
-  `tools/skill_manager_tool.py` (`_staged_create_error` in `_run_write_gate`, limit in the create
-  check and the tool description); `tools/skill_linter.py`; `hermes_cli/config_defaults.py`
-  (`skills.description_limit`); docs in `website/docs/user-guide/features/skills.md`; tests in
-  `tests/tools/test_skill_description_limit.py`.
-- **Purpose:** the user's limit is 100 characters (default 60), so each skill's line can say when
-  not to use it. A new skill that would fail on approval (too-long description, bad name, bad
-  frontmatter) is refused when proposed, so the author fixes it and the user never approves
-  something that then fails. The tool description states the real limit.
-- **If it breaks:** keep the limit read from config in one function, and the create checks running
-  before a skill write is staged.
-
 ### 8. Subscription-login name rewrite leaves Windows paths alone
 
 - **Files:** `agent/anthropic_adapter.py` (`_OAUTH_SLUG_PATTERN`: a backslash added to both
@@ -239,6 +225,32 @@ that meet one of the changes below. This file is the list that review works from
   both client routes sending them only when the gateway advertises them.
 
 ## Pending review
+
+### 7. Configurable skill description length, checked before a new skill is staged
+
+- **Files:** `agent/skill_utils.py` (`skill_prompt_desc_limit()`, `clip_skill_description()`
+  with a limit parameter, used by the index truncation); `tools/skill_manager_tool.py`
+  (`_description_budget_error` in `_guarded_write`, `_staged_create_error` in `_run_write_gate`,
+  limit in the create check and the tool description); `tools/skill_linter.py`;
+  `hermes_cli/config_defaults.py` (`skills.description_limit`); docs in
+  `website/docs/user-guide/features/skills.md`; tests in
+  `tests/tools/test_skill_description_limit.py`.
+- **Purpose:** the user's limit is 100 characters (default 60), so each skill's line can say when
+  not to use it. A new skill that would fail on approval (too-long description, bad name, bad
+  frontmatter) is refused when proposed, so the author fixes it and the user never approves
+  something that then fails. The tool description states the real limit.
+- **If it breaks:** keep the limit read from config in one function; the budget check must run on
+  every write that reaches the root SKILL.md (that is where NousResearch put it); and the create
+  checks must keep running before a skill write is staged.
+- **Differences (NousResearch 3a3bf5648e, df92e33081, b66ab2bb7b):** upstream enforces a fixed
+  60 characters — the write-time budget check, the index clip width, the tool description and the
+  authoring-standards test all hard-code 60, and over-long index descriptions are clipped at a word
+  boundary (any whitespace counts). The fork keeps one configurable limit instead
+  (`skills.description_limit`, default 60, the user's is 100): the budget check, the clip width,
+  the linter, the tool description and /learn all read it, so at 100 the fork accepts and shows
+  descriptions upstream would refuse or clip. The fork's code follows upstream's new structure
+  (one budget check in `_guarded_write`, so it also covers explicit `SKILL.md` file paths; word
+  boundary clipping), with the fixed 60 swapped for the configured limit.
 
 ### 10. The slash menu updates when skills or plugins change on disk
 

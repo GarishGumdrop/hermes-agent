@@ -179,12 +179,34 @@ def _validate_frontmatter(content: str, *, new_skill: bool = False) -> Optional[
     return None
 
 
+def _description_budget_error(content: str, before: Optional[str] = None) -> Optional[str]:
+    """A description written by this call (a create, or an edit/patch that changes it from the one in
+    ``before``) must fit skill_prompt_desc_limit(), the width the skill index shows. An unchanged legacy
+    over-limit description stays editable: a body patch must not be blocked by an old frontmatter."""
+    limit = skill_prompt_desc_limit()
+    desc = _description_of(content) or ""
+    if len(desc) <= limit or (before is not None and desc == _description_of(before)):
+        return None
+    return (
+        f"Description is {len(desc)} chars; a skill description must fit the "
+        f"{limit}-char skill index (one sentence, trigger first, ends with a "
+        f"period, without repeating the category name). The index clips anything longer. "
+        f"Move detail into the skill body.")
+
+
 def _validate_content_size(content: str, label: str = "SKILL.md") -> Optional[str]:
     if len(content) > MAX_SKILL_CONTENT_CHARS:
         return (
             f"{label} content is {len(content):,} characters (limit: {MAX_SKILL_CONTENT_CHARS:,}). "
             f"Consider splitting into a smaller SKILL.md with supporting files in references/ "
             f"or templates/.")
+    return None
+
+
+def _description_of(content: Optional[str]) -> Optional[str]:
+    """Normalized frontmatter description of a SKILL.md text; None when absent or unparseable."""
+    with suppress(Exception):
+        return str(_parse_frontmatter(content or "")[0]["description"]).strip().strip("'\"")
     return None
 
 
@@ -394,13 +416,16 @@ def _locate_for_write(name: str, action: str, not_found_suffix: str = ""):
 
 def _guarded_write(name: str, skill_dir: Path, target: Path, action: str, label: str,
                    content: str) -> Optional[dict[str, Any]]:
-    """Read-before-write guard (existing targets only), atomic write, then the security scan;
-    a blocked scan restores the original (or unlinks a new file). Error dict or None."""
+    """Read-before-write guard (existing targets only), the description budget for the root SKILL.md
+    (whichever action and file_path reach it), atomic write, then the security scan; a blocked scan
+    restores the original (or unlinks a new file). Error dict or None."""
     original = None
     if target.exists():
         if read_guard := _background_review_read_before_write_guard(name, target, action, label):
             return read_guard
         original = target.read_text(encoding="utf-8-sig")
+    if target == skill_dir / "SKILL.md" and (err := _description_budget_error(content, before=original)):
+        return _err(err)
     from hermes_constants import mkdir_under_hermes_home
     mkdir_under_hermes_home(target.parent)
     atomic_write_text(target, content, preserve_mode=True, create_mode=0o644)
@@ -452,7 +477,7 @@ def _clip(text: str, n: int, ellipsis: str) -> str:
 
 def _create_skill(name: str, content: str, category: str | None = None) -> dict[str, Any]:
     if err := (_validate_name(name) or _validate_category(category)
-               or _validate_frontmatter(content, new_skill=True) or _validate_content_size(content)):
+               or _validate_frontmatter(content) or _validate_content_size(content)):
         return _err(err)
     if existing := _find_skill(name):
         return _err(f"A skill named '{name}' already exists at {existing['path']}.")
@@ -849,8 +874,8 @@ def skill_manage(
 
 def _skill_manage_description() -> str:
     return (
-        "Create, update, or delete skills — your procedural memory for "
-        "recurring task types. The call is an operations array (a single "
+        "Create, update or delete skills: your procedural memory for recurring "
+        "tasks. The call is an operations array (a single "
         "edit is a list of one); it applies atomically — any failure rolls "
         "every touched skill back. Ops: create (full SKILL.md; lands in "
         "the profile's skills directory or configured skills.create_dir; must precede that skill's other "

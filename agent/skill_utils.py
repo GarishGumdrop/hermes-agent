@@ -848,6 +848,10 @@ def skill_prompt_desc_limit() -> int:
     except Exception:
         value = 0
     return value if value >= 20 else SKILL_PROMPT_DESC_LIMIT
+# Word-boundary clip helpers (NousResearch 3a3bf5648e/b66ab2bb7b): any whitespace
+# separates words, trailing punctuation is trimmed before the ellipsis.
+_LAST_WHITESPACE_RE = re.compile(r"\s\S*$")
+_CLIP_TRAIL_RE = re.compile(r"[\s.,;:\-\u2013\u2014(/]+$")
 
 
 def _normalize_skill_description(frontmatter: dict[str, Any]) -> str:
@@ -856,10 +860,23 @@ def _normalize_skill_description(frontmatter: dict[str, Any]) -> str:
     return str(raw_desc).strip().strip("'\"") if raw_desc else ""
 
 
+def clip_skill_description(desc: str, limit: Optional[int] = None) -> str:
+    """*desc* fitted to *limit* (default: skill_prompt_desc_limit()), cut at a word boundary so
+    the index never shows a half word."""
+    if limit is None:
+        limit = skill_prompt_desc_limit()
+    if len(desc) <= limit:
+        return desc
+    head = desc[:limit - 2]  # one char past the budget: whitespace there means the last word is whole
+    boundary = _LAST_WHITESPACE_RE.search(head)  # any whitespace (tab, NBSP, ...) separates words, not just " "
+    if not boundary or boundary.start() == 0:  # a single word longer than the budget has no boundary to cut at
+        return desc[:limit - 3] + "..."
+    return _CLIP_TRAIL_RE.sub("", head[:boundary.start()]) + "..."
+
+
 def extract_skill_description(frontmatter: dict[str, Any]) -> str:
     """Extract a system-prompt-length description from parsed frontmatter."""
-    desc, limit = _normalize_skill_description(frontmatter), skill_prompt_desc_limit()
-    return desc[:limit - 3] + "..." if len(desc) > limit else desc
+    return clip_skill_description(_normalize_skill_description(frontmatter))
 
 
 def is_skill_description_truncated_for_prompt(frontmatter: dict[str, Any]) -> bool:
