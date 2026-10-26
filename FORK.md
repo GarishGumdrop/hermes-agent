@@ -11,6 +11,9 @@ that meet one of the changes below. This file is the list that review works from
 - **Partial overlap, or the same feature with significantly different behaviour:** keep the fork's
   version, alone (never both side by side), and move the entry to "Pending review" with the
   differences. The user decides; until then the fork's version stays.
+- **Decided by the user:** a Pending review entry he has settled goes back to "Changes" with a
+  **Decided** line naming the NousResearch commits it was compared with. That difference with those
+  commits never sends it back; a later NousResearch change in the same area is reviewed as usual.
 - **NousResearch changed code a fork change hooks into:** adapt the fork change to the new code.
 - **Anything else:** NousResearch's version. The fork carries no other intentional differences.
 - Fork changes stay at the edges: new files where possible, the smallest possible edit where core
@@ -134,6 +137,37 @@ that meet one of the changes below. This file is the list that review works from
   `sessions.internal_retention_days` (default 30, 0 = keep; pinned and archived ones are kept) one
   by one with `hermes sessions delete` (prune cannot: it deletes only ended sessions, and gateway
   sessions started by `run_gateway_chat` never end), and puts every outcome in the report.
+
+### 12. Assistant code blocks wrap long lines instead of scrolling sideways
+
+- **Files:** `apps/desktop/src/components/chat/code-card.tsx` (wrapping
+  utilities on `CodeCardBody` pre/code/line); `apps/desktop/src/components/chat/shiki-highlighter.tsx`
+  (`PlainCode` wraps); `apps/desktop/src/components/chat/shiki-plain.tsx`
+  (`PlainShiki` wraps); `apps/desktop/src/components/chat/shiki-block.tsx`
+  (`plainTextHtml` fallback wraps); `apps/desktop/src/components/chat/expandable-block.tsx`
+  (horizontal overflow hidden); `apps/desktop/src/styles.css` (code-card
+  pre/code/`.shiki`/`.line` wrap rule); `apps/desktop/src/components/assistant-ui/markdown-text.overflow.test.tsx`
+  (updated expectations).
+- **Purpose:** a long line in an assistant code block ran off the side of the
+  card behind a horizontal scroller. Assistant fences now wrap the way user
+  fences already do (`whitespace-pre-wrap` + `wrap-anywhere`), so the whole
+  block stays readable in the column. Tables keep their own horizontal scroll;
+  copy still takes the original text.
+- **If it breaks:** upstream probably reshaped the code-card render path. Keep
+  the rule: every pre/code path (plain, highlighted, loading and error
+  fallbacks) wraps, and the card's scroller never scrolls sideways.
+- **Decided (26 Oct 2026):** the user keeps the fork's wrapping over NousResearch's sideways
+  scrolling (7ac4cf552c, cce9f40c67, 394793b4d8). That difference is settled and does not send
+  this entry back to Pending review; a later NousResearch change to code-block layout is reviewed
+  as usual.
+- **Differences (NousResearch 7ac4cf552c, cce9f40c67, 394793b4d8):** upstream
+  keeps sideways scrolling for code: native Desktop sizes the fence to its own
+  width and scrolls long lines inside it, and browser-hosted Desktop sizes the
+  fence to its longest line (`min-w-max`) so the card scrolls sideways in place
+  with a fade at the cut edge. The fork, kept as the only version, wraps every
+  fence instead and hides the card's horizontal scroller, so no code scrolls
+  sideways anywhere. Their scroll expectations and browser-host test were
+  removed; only the fork's wrap test stays.
 
 ### 13. The /learn prompt uses the configured skill description limit
 
@@ -265,33 +299,6 @@ that meet one of the changes below. This file is the list that review works from
   Their test `test_a_skill_installed_in_another_sessions_repo_broadcasts_skills_changed` expects
   the project-folder watch the fork's signal does not have, so it carries a one-line skip marker
   naming this entry.
-
-### 12. Assistant code blocks wrap long lines instead of scrolling sideways
-
-- **Files:** `apps/desktop/src/components/chat/code-card.tsx` (wrapping
-  utilities on `CodeCardBody` pre/code/line); `apps/desktop/src/components/chat/shiki-highlighter.tsx`
-  (`PlainCode` wraps); `apps/desktop/src/components/chat/shiki-plain.tsx`
-  (`PlainShiki` wraps); `apps/desktop/src/components/chat/shiki-block.tsx`
-  (`plainTextHtml` fallback wraps); `apps/desktop/src/components/chat/expandable-block.tsx`
-  (horizontal overflow hidden); `apps/desktop/src/styles.css` (code-card
-  pre/code/`.shiki`/`.line` wrap rule); `apps/desktop/src/components/assistant-ui/markdown-text.overflow.test.tsx`
-  (updated expectations).
-- **Purpose:** a long line in an assistant code block ran off the side of the
-  card behind a horizontal scroller. Assistant fences now wrap the way user
-  fences already do (`whitespace-pre-wrap` + `wrap-anywhere`), so the whole
-  block stays readable in the column. Tables keep their own horizontal scroll;
-  copy still takes the original text.
-- **If it breaks:** upstream probably reshaped the code-card render path. Keep
-  the rule: every pre/code path (plain, highlighted, loading and error
-  fallbacks) wraps, and the card's scroller never scrolls sideways.
-- **Differences (NousResearch 7ac4cf552c, cce9f40c67, 394793b4d8):** upstream
-  keeps sideways scrolling for code: native Desktop sizes the fence to its own
-  width and scrolls long lines inside it, and browser-hosted Desktop sizes the
-  fence to its longest line (`min-w-max`) so the card scrolls sideways in place
-  with a fade at the cut edge. The fork, kept as the only version, wraps every
-  fence instead and hides the card's horizontal scroller, so no code scrolls
-  sideways anywhere. Their scroll expectations and browser-host test were
-  removed; only the fork's wrap test stays.
 
 ## Retired
 
