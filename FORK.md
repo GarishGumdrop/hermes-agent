@@ -239,6 +239,22 @@ that meet one of the changes below. This file is the list that review works from
   fields in the closed create contract (a client that sends a field the contract lacks is refused);
   both client routes sending them only when the gateway advertises them.
 
+### 17. Windows updates refresh the computer-use driver unless a logon task needs UAC
+
+- **Files:** `hermes_cli/update_cmd_maint.py` (`_refresh_cua_driver_after_update`, its `win32`
+  branch); tests in `tests/hermes_cli/test_update_cua_pm.py` (the three Windows tests).
+- **Purpose:** on Windows, `hermes update` printed "cua-driver refresh deferred (autostart
+  registration requires UAC)" on every run where the driver was installed, without checking
+  anything, so the nightly report carried it every night. NousResearch wrote it (5e4a2a3d24) when
+  every install registered the `cua-driver-serve` logon task. Since 959c7649fd (#97389) that task is
+  opt-in (`computer_use.autostart`) and the default registers nothing. Now, with the task off, the
+  update installs a new pinned driver unelevated, as on Linux, and says nothing when the pin is
+  already installed. With the task on, it defers, and says so, only when the pin is new or the task
+  does not target it.
+- **If it breaks:** keep three outcomes on Windows. Task off: `pm.ensure` when the pin is outdated,
+  silence when it is installed. Task on and registered for the installed pin: silence. Task on
+  otherwise: the deferral notice, never an unattended UAC prompt.
+
 ## Pending review
 
 ### 7. Configurable skill description length, checked before a new skill is staged

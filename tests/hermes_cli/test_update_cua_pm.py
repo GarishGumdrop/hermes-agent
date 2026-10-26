@@ -51,10 +51,55 @@ def test_linux_refresh_reconciles_installed_pin(refresh):
     ensure.assert_called_once_with("cua-driver", explicit=True)
 
 
+def _pins(lookup, *, current):
+    """``installed_package``: an installed copy counts when outdated ones do; the pin only if *current*."""
+    lookup.side_effect = lambda name, allow_outdated=False: (
+        SimpleNamespace(binary="C:/pm/cua-driver.exe") if allow_outdated or current else None)
+
+
 @pytest.mark.platforms("windows")
-def test_windows_refresh_defers_pin_and_uac_to_explicit_setup(refresh, monkeypatch, capsys):
+def test_windows_on_demand_refresh_is_silent_when_pin_installed(refresh, monkeypatch, capsys):
+    """Fork change 17: with the logon task off (the default) nothing needs UAC and nothing is due."""
+    lookup, ensure = refresh
+    _pins(lookup, current=True)
+    monkeypatch.setattr(setup, "_cua_autostart_opt_in", lambda: False)
+
+    update._refresh_cua_driver_after_update()
+
+    ensure.assert_not_called()
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.platforms("windows")
+def test_windows_on_demand_refresh_reconciles_outdated_pin_unelevated(refresh, monkeypatch, capsys):
+    """Fork change 17: no logon task to re-register, so a new pin is installed like on Linux."""
+    lookup, ensure = refresh
+    _pins(lookup, current=False)
+    monkeypatch.setattr(setup, "_cua_autostart_opt_in", lambda: False)
+    host_setup = Mock(side_effect=AssertionError("unattended UAC"))
+    monkeypatch.setattr(setup, "install_cua_driver", host_setup)
+
+    update._refresh_cua_driver_after_update()
+
+    ensure.assert_called_once_with("cua-driver", explicit=True)
+    host_setup.assert_not_called()
+    assert "UAC" not in capsys.readouterr().out
+
+
+@pytest.mark.platforms("windows")
+@pytest.mark.parametrize("current,registered,deferred", [
+    (False, False, True),   # a new pin: the logon task still targets the old binary
+    (True, False, True),    # the pin is installed but the task is stale or missing
+    (True, True, False),    # the pin is installed and the task targets it: nothing to say
+])
+def test_windows_autostart_opt_in_defers_only_when_task_needs_uac(
+    refresh, monkeypatch, capsys, current, registered, deferred,
+):
     """Keep the task's versioned executable selected until interactive re-registration."""
-    _, ensure = refresh
+    lookup, ensure = refresh
+    _pins(lookup, current=current)
+    monkeypatch.setattr(setup, "_cua_autostart_opt_in", lambda: True)
+    monkeypatch.setattr(setup, "_cua_driver_autostart_registered_windows", lambda *args: registered)
     host_setup = Mock(side_effect=AssertionError("unattended UAC"))
     monkeypatch.setattr(setup, "install_cua_driver", host_setup)
 
@@ -63,9 +108,10 @@ def test_windows_refresh_defers_pin_and_uac_to_explicit_setup(refresh, monkeypat
     ensure.assert_not_called()
     host_setup.assert_not_called()
     output = capsys.readouterr().out
-    assert "deferred" in output.lower()
-    assert "UAC" in output
-    assert "hermes computer-use install --upgrade" in output
+    assert ("deferred" in output.lower()) == deferred
+    if deferred:
+        assert "UAC" in output
+        assert "hermes computer-use install --upgrade" in output
 
 
 @pytest.mark.platforms("macos")

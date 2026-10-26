@@ -874,11 +874,20 @@ def _refresh_cua_driver_after_update() -> None:
     if pm.installed_package("cua-driver", allow_outdated=True) is None:
         return
     if sys.platform == "win32":
-        # The scheduled task targets a versioned binary. Selecting a new pin
-        # without re-registering leaves it stale; registration requires UAC.
-        print("\n→ Windows cua-driver refresh deferred (autostart registration requires UAC).")
-        print("  Run `hermes computer-use install --upgrade` in an interactive terminal.")
-        return
+        # Fork change 17: only the opt-in logon task (computer_use.autostart) needs UAC. It
+        # targets a versioned binary, so selecting a new pin without re-registering leaves it
+        # stale. With the on-demand default (#97389) nothing is registered: reconcile the pin
+        # unelevated, as on Linux, and say nothing when the pinned version is already installed.
+        from hermes_cli.tools_config_cua import (
+            _cua_autostart_opt_in, _cua_driver_autostart_registered_windows)
+        current = pm.installed_package("cua-driver")
+        if _cua_autostart_opt_in():
+            if current is None or not _cua_driver_autostart_registered_windows():
+                print("\n→ Windows cua-driver refresh deferred (autostart registration requires UAC).")
+                print("  Run `hermes computer-use install --upgrade` in an interactive terminal.")
+            return
+        if current is not None:
+            return
     print("\n→ Preparing pinned cua-driver (Computer Use)...")
     if sys.platform == "darwin":
         # PM preserves the signed app; setup validates and registers its new path
