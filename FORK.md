@@ -34,6 +34,10 @@ that meet one of the changes below. This file is the list that review works from
   when told to in plain English.
 - **If it breaks:** usually a store in `apps/desktop/src/store/` was renamed or
   its setter changed. Update the import and the table entry; keep the setting.
+- Window translucency (`windowTranslucency`, `windowFade`,
+  `windowTranslucencyMode`) is included and sets light and dark together; the
+  user wants the window fully solid and set it to 0 through these keys. Keep
+  them if `store/translucency.ts` or `@hermes/shared/translucency` changes.
 
 ### 2. Agent screenshots of the app window
 

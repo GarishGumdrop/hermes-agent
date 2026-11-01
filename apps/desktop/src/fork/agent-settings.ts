@@ -17,6 +17,8 @@
  * build fails with a type error naming it: loud, never a silent no-op.
  */
 
+import { setTranslucencyValues } from '@hermes/shared/translucency'
+
 import { $pluginRecords, setPluginEnabled } from '@/contrib/plugins-store'
 import { $backdrop, setBackdrop } from '@/store/backdrop'
 import { $chatTextScale, CHAT_TEXT_SCALE_PRESETS, setChatTextScale } from '@/store/chat-text-scale'
@@ -53,6 +55,7 @@ import { $tipsEnabled, setTipsEnabled } from '@/store/tips'
 import { $titlebarAppActionsSide, setTitlebarAppActionsSide } from '@/store/titlebar-app-actions'
 import { $hideCodeDiffs, $toolViewMode, setHideCodeDiffs, setToolViewMode } from '@/store/tool-view'
 import { $toursEnabled, setToursEnabled } from '@/store/tours'
+import { $translucency, $translucencyBook, setTranslucencyMode } from '@/store/translucency'
 import { $userBubbleTransparency, setUserBubbleTransparency } from '@/store/user-bubble-transparency'
 import { $vibeHeartsEnabled, setVibeHeartsEnabled } from '@/store/vibe-hearts-enabled'
 import { $autoSpeakReplies, setAutoSpeakReplies } from '@/store/voice-prefs'
@@ -99,6 +102,19 @@ const num = (
 
 const tray = () => window.hermesDesktop?.minimizeToTray
 
+// Window translucency is stored per light/dark appearance; the Settings slider
+// edits only the one on screen. The agent's switch sets BOTH, so the window
+// stays as the user asked after a light/dark change.
+const setBothAppearances = (patch: { fade?: number; intensity?: number }) => {
+  let book = $translucencyBook.get()
+
+  for (const appearance of ['light', 'dark'] as const) {
+    book = setTranslucencyValues(book, appearance, patch)
+  }
+
+  $translucencyBook.set(book)
+}
+
 const SETTINGS: Record<string, SettingSpec> = {
   // Appearance > Typography
   chatTextScale: choice('Chat text size (percent)', CHAT_TEXT_SCALE_PRESETS, $chatTextScale, setChatTextScale),
@@ -144,6 +160,28 @@ const SETTINGS: Record<string, SettingSpec> = {
       await api.set(on)
     }
   },
+  windowTranslucency: {
+    label: 'Window see-through amount, light and dark (0 = solid)',
+    type: 'number',
+    min: 0,
+    max: 100,
+    get: () => $translucency.get().intensity,
+    set: (value: number) => setBothAppearances({ intensity: value })
+  },
+  windowFade: {
+    label: 'Window fade when not in focus, light and dark (0 = never)',
+    type: 'number',
+    min: 0,
+    max: 100,
+    get: () => $translucency.get().fade,
+    set: (value: number) => setBothAppearances({ fade: value })
+  },
+  windowTranslucencyMode: choice(
+    'Window see-through style',
+    ['clear', 'glass'] as const,
+    { get: () => $translucencyBook.get().mode },
+    setTranslucencyMode
+  ),
   // Appearance > Chat display
   userBubbleTransparency: num('Your message bubble transparency', 0, 100, $userBubbleTransparency, setUserBubbleTransparency),
   textDirection: choice('Text direction', ['auto', 'ltr', 'rtl'] as const, $textDirection, setTextDirection),
