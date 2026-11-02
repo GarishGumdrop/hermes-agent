@@ -277,6 +277,8 @@ that meet one of the changes below. This file is the list that review works from
   surfaces, HUD frost), the Window Translucency setting is hidden on every OS,
   and the in-page sheet removes blur, semi-transparent panels/menus/scrims,
   message-bubble transparency and the unfocused-chat fade under every theme.
+  That sheet sits in a randomly named cascade layer kept first in `<head>`, so
+  no theme, skin or plugin CSS can override it, however specific.
 - **If it breaks:** never resolve a clash by dropping a `NO_SEE_THROUGH`
   guard. If upstream renames or splits these functions, put the guard on
   whatever now decides native window opacity, the window backdrop/material and

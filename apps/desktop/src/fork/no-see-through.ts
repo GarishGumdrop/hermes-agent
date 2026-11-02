@@ -8,13 +8,20 @@
  * through, the message-bubble transparency lever and the unfocused-chat fade.
  *
  * The rules live here, not in a skin, so switching themes cannot drop them.
- * The style element is kept as the LAST child of <head>, so a later sheet
- * (skin customCSS, plugin CSS) with equal specificity cannot win either.
+ *
+ * They also cannot be overridden by any other stylesheet, however specific its
+ * selector. The rules sit in a cascade layer with a random per-load name, in a
+ * style element kept as the FIRST child of <head>. For !important
+ * declarations the earliest-declared layer wins over every later layer and
+ * over all unlayered CSS, regardless of specificity, and the random name means
+ * no other sheet can add rules to this layer.
  */
 
 const STYLE_ID = 'hermes-fork-no-see-through'
 
-const CSS = `
+const LAYER = `hermes-no-see-through-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+
+const RULES = `
 :root, :root:root {
   --chat-unfocused-opacity: 1 !important;
   --user-bubble-keep: 100% !important;
@@ -48,7 +55,9 @@ html, body, #root {
 }
 `
 
-function ensureLast(): void {
+const CSS = `@layer ${LAYER} {${RULES}}`
+
+function ensureFirst(): void {
   const head = document.head
 
   if (!head) {
@@ -60,21 +69,21 @@ function ensureLast(): void {
   if (!style) {
     style = document.createElement('style')
     style.id = STYLE_ID
-    style.textContent = CSS
-  } else if (style.textContent !== CSS) {
+  }
+
+  if (style.textContent !== CSS) {
     style.textContent = CSS
   }
 
-  if (head.lastElementChild !== style) {
-    head.appendChild(style)
+  if (head.firstChild !== style) {
+    head.insertBefore(style, head.firstChild)
   }
 }
 
 if (typeof document !== 'undefined') {
-  ensureLast()
-  // Re-assert after anything else touches <head> (skin swaps inject a new
-  // sheet; removing ours puts it straight back).
-  new MutationObserver(ensureLast).observe(document.head, { childList: true, characterData: true, subtree: true })
+  ensureFirst()
+  // Put it back if anything removes, edits or moves ahead of it.
+  new MutationObserver(ensureFirst).observe(document.head, { characterData: true, childList: true, subtree: true })
 }
 
 export {}
