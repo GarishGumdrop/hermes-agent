@@ -133,6 +133,16 @@ that meet one of the changes below. This file is the list that review works from
   Child steps use Hermes's own environment Python (`hermes_python()`), never `sys.executable`.
   Install problems (`hermes update` exits 0 even when the desktop build fails) and a report that
   could not be written become notes in `update-notes.json`; nothing fails silently.
+- **The report is a working conversation (user requirement, built 2 Nov):** the report session is
+  created on the user's normal setup (his default model, toolsets, rules, memory, plugins and
+  approvals), not in safe mode, so he can keep working in it after the run: ask questions, finish a
+  held merge. A session's launch settings are frozen at creation, so this must hold at creation;
+  never give the report `tools=[]` or safe mode again. Only its first, unattended turn auto-approves;
+  the record names the review's session id and scratch copy so the conversation can investigate.
+- **Scratch copy outside the Hermes home:** `%LOCALAPPDATA%\hermes-fork-sync-work`. The test suite
+  refuses file access inside the Hermes home, so tests run in a copy there all fail; on 2 Nov that
+  alone held the update. The review is told failures in upstream-only tests or ones the fork shares
+  do not hold the update.
 - **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat`, `pm.environments.committed_venv`
   or `tools/skills_sync.py` changed; adapt the calls in the script.
 - **Its sessions (change 16):** every model session is titled "Nightly update <day> <month> <HH:MM>:

@@ -42,7 +42,9 @@ from hermes_constants import get_hermes_home
 
 HOME = Path(get_hermes_home())
 STATE = HOME / "fork-sync"
-WORK = STATE / "work"
+# Outside the Hermes home: the test suite refuses all file access inside it, so tests run in a copy
+# there fail for that reason alone (the 2 Nov hold came from exactly that).
+WORK = HOME.parent / "hermes-fork-sync-work"
 PROMPTS = Path(__file__).with_name("fork_sync")
 UPSTREAM = "https://github.com/NousResearch/hermes-agent.git"
 TRIAGE = ("openrouter", "meta/muse-spark-1.3-contributor")
@@ -99,6 +101,8 @@ class Hold(Exception):
 
 
 RECORD = []  # what this run did, for the report session
+LAST_SESSION = ""  # id of the session the last successful ask() ran in
+SPENT = 0.0  # this run's model cost so far; kept when a hold interrupts merge() before it returns
 
 
 def record(text):
@@ -127,7 +131,8 @@ def setting(path):
 class _Result:
     """The emitter interface Hermes's chat view reports a finished turn to."""
     result: dict = {}
-    def bind_session(self, _): pass
+    session_id = ""
+    def bind_session(self, sid): self.session_id = sid or ""
     def on_text_delta(self, _): pass
     def on_tool_progress(self, *a, **k): pass
     def emit_result(self, result, session_id="", exit_code=0):
@@ -145,20 +150,29 @@ def _openrouter_key():
 
 
 def _session(prompt, provider, model, tools, source, title=None):
+    """tools=None: a normal conversation on the user's own setup (his model, toolsets, rules, memory,
+    plugins and approvals), which he can keep working in afterwards. A session's launch settings are
+    frozen at creation, so the report must be created this way for its follow-ups to have tools.
+    Otherwise: an unattended safe-mode session with approvals off and exactly *tools*."""
     out = _Result()
     # continue_last + create_if_missing: the session is created with this title (hermes chat -c <title>
     # --create-if-missing); every title this script uses is unique to its run, step and attempt.
-    args = argparse.Namespace(oneshot=prompt, provider=provider, model=model, toolsets=",".join(tools),
-                              max_turns=150, yolo=True, safe_mode=True, source=source,
-                              continue_last=title, create_if_missing=bool(title), launched_by=LAUNCHED_BY,
-                              in_dir=str(WORK if WORK.exists() else STATE),
-                              quiet=True, reasoning=setting("agent.reasoning_effort"),
-                              api_key=_openrouter_key() if provider == "openrouter" else None)
+    if tools is None:
+        args = argparse.Namespace(oneshot=prompt, source=source, continue_last=title,
+                                  create_if_missing=bool(title), launched_by=LAUNCHED_BY,
+                                  in_dir=str(WORK if WORK.exists() else STATE), quiet=True)
+    else:
+        args = argparse.Namespace(oneshot=prompt, provider=provider, model=model, toolsets=",".join(tools),
+                                  max_turns=150, yolo=True, safe_mode=True, source=source,
+                                  continue_last=title, create_if_missing=bool(title), launched_by=LAUNCHED_BY,
+                                  in_dir=str(WORK if WORK.exists() else STATE),
+                                  quiet=True, reasoning=setting("agent.reasoning_effort"),
+                                  api_key=_openrouter_key() if provider == "openrouter" else None)
     try:
         asyncio.run(run_gateway_chat(args, emitter=out))
     except Exception as exc:
         out.result = {"failed": True, "error": str(exc)}
-    r = out.result
+    r = {**out.result, "session_id": out.session_id}
     with open(STATE / "spend.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps({"time": datetime.now().isoformat(timespec="seconds"), "model": model,
                             **{k: r.get(k) for k in ("input_tokens", "output_tokens", "cache_read_tokens",
@@ -171,6 +185,7 @@ def ask(prompt, provider, model, tools, source="tool", step="model call"):
     models with growing waits; if none replies, raises Hold with the real errors (the update then
     installs the fork as it was and reports the hold). Each attempt is its own session, titled
     "Nightly update <stamp>: <step>" (", attempt N" from the second)."""
+    global LAST_SESSION, SPENT
     # OpenRouter can fail briefly, and Hermes refuses new sessions while an update holds its update
     # lock, so keep trying both models with growing waits (~10 minutes in all) before giving up.
     errors = []
@@ -179,12 +194,15 @@ def ask(prompt, provider, model, tools, source="tool", step="model call"):
         if wait:
             say(f"No reply yet; trying again in {wait} seconds.")
             time.sleep(wait)
-        for prov, mod in dict.fromkeys([(provider, model), FALLBACK]):
+        # A normal conversation (tools=None) runs on his own model only; no cheap fallback.
+        for prov, mod in dict.fromkeys([(provider, model)] + ([FALLBACK] if tools is not None else [])):
             attempt += 1
             title = f"Nightly update {STAMP}: {step}" + (f", attempt {attempt}" if attempt > 1 else "")
             r = _session(prompt, prov, mod, tools, source, title)
             reply = str(r.get("final_response") or "").strip()
+            SPENT += r.get("estimated_cost_usd") or 0
             if not r.get("failed") and reply:
+                LAST_SESSION = r.get("session_id") or ""
                 return reply, r.get("estimated_cost_usd") or 0
             why = r.get("error") or ("the session failed without saying why (see logs/gateway.log)"
                                      if r.get("failed") else "the model's reply was empty")
@@ -247,6 +265,8 @@ def merge(fork, upstream, fork_md=None):
         source="cli", step="review")  # "cli" shows the review in the user's session list; "tool" is internal
     cost += review_cost
     record(f"Review ({REVIEW[1]}) reply:\n{note}")
+    record(f"Review session id: {LAST_SESSION}. The scratch copy it worked in is {WORK}; it is kept "
+           f"until the next run starts.")
     if (WORK / ".git" / "MERGE_HEAD").exists() or git("merge-base", "--is-ancestor", upstream, "HEAD", cwd=WORK, check=False).returncode:
         raise Hold(note or "The review left the merge unfinished.")
     return note, cost
@@ -264,17 +284,26 @@ a programmer: plain English, short, no preamble, in this order:
 6. What the cleanup of old internal sessions deleted, in one line.
 7. The model cost.
 
+Write this first reply from the record alone, without using tools. This conversation runs on his normal
+setup with your full tools, so after the report he may ask you to investigate or finish the work here.
+When he does, act: the record names the review's session (read it with session_search) and its scratch
+copy, the full record is in fork-sync/last-run.txt, and the hermes-local-install skill describes this
+update and how to change, test, push and install the fork.
+
 # Record
 
 """
 
 
 def report(path):
-    """The report session: the cheap model turns this run's record into the user's report. ask()
-    already retries for ~10 minutes; if no model replies, the user is told so instead of nothing."""
+    """The report session: a normal conversation on the user's own model, toolsets, rules and approvals
+    turns this run's record into his report, and he can keep working in it afterwards (asking
+    questions, finishing a held merge). ask() already retries for ~10 minutes; if no model replies,
+    the user is told so instead of nothing."""
     prompt = REPORT_PROMPT + Path(path).read_text(encoding="utf-8")
     try:
-        ask(prompt, *TRIAGE, tools=[], source="cli", step="report")
+        # tools=None: his normal setup, so he can keep working in the report conversation.
+        ask(prompt, None, None, tools=None, source="cli", step="report")
     except Hold as exc:
         notify(f"Tonight's Hermes update ran, but its report could not be written. {exc}\n\n"
                f"What the run did is in {path}.")
@@ -420,7 +449,7 @@ def main():
                                     "reason": "NousResearch's changes were not merged into your fork tonight; "
                                               "Hermes was updated to your fork as it was.",
                                     "files": [], "detail": str(exc)[-3000:]}, indent=2), encoding="utf-8")
-    record(f"Model cost of the merge and review: ${cost:.2f} (estimate at API prices).")
+    record(f"Model cost of the merge and review: ${SPENT:.2f} (estimate at API prices).")
     import psutil
     open_app = next((p.info["exe"] for p in psutil.process_iter(["name", "exe"])
                      if p.info["name"] == "Hermes.exe" and str(DESKTOP).lower() in (p.info["exe"] or "").lower()), None)
