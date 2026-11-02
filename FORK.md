@@ -35,9 +35,9 @@ that meet one of the changes below. This file is the list that review works from
 - **If it breaks:** usually a store in `apps/desktop/src/store/` was renamed or
   its setter changed. Update the import and the table entry; keep the setting.
 - Window translucency (`windowTranslucency`, `windowFade`,
-  `windowTranslucencyMode`) is included and sets light and dark together; the
-  user wants the window fully solid and set it to 0 through these keys. Keep
-  them if `store/translucency.ts` or `@hermes/shared/translucency` changes.
+  `windowTranslucencyMode`) is included and sets light and dark together. Since
+  change 18 they cannot make anything see-through; they stay so the keys still
+  resolve.
 
 ### 2. Agent screenshots of the app window
 
@@ -258,6 +258,31 @@ that meet one of the changes below. This file is the list that review works from
 - **If it breaks:** keep three outcomes on Windows. Task off: `pm.ensure` when the pin is outdated,
   silence when it is installed. Task on and registered for the installed pin: silence. Task on
   otherwise: the deferral notice, never an unattended UAC prompt.
+
+### 18. Nothing in Hermes is ever see-through
+
+- **Files:** `apps/shared/src/translucency.ts` (the `NO_SEE_THROUGH` constant
+  and the lines marked `FORK (no see-through)` in `translucencySupportedOn`,
+  `glassSupportedOn`, `normalizeState`, `defaultTranslucencyState`,
+  `resolveTranslucency`, `windowOpacityFor`, `glassActive`);
+  `apps/desktop/src/fork/no-see-through.ts` (new file); two lines in
+  `apps/desktop/index.html` that load it.
+- **Purpose:** the user requires that no part of the Hermes interface can be
+  see-through, by any setting, theme, skin, default or person. Upstream ships
+  translucency ON by default (intensity 29, per light/dark appearance), so
+  switching theme flipped the window to a different, still-translucent
+  appearance slot, and the skin CSS that hid blur/scrims only applied while
+  that one skin was active. Now the shared module answers "opaque" to every
+  caller (main-process window opacity, Windows/macOS backdrop, renderer glass
+  surfaces, HUD frost), the Window Translucency setting is hidden on every OS,
+  and the in-page sheet removes blur, semi-transparent panels/menus/scrims,
+  message-bubble transparency and the unfocused-chat fade under every theme.
+- **If it breaks:** never resolve a clash by dropping a `NO_SEE_THROUGH`
+  guard. If upstream renames or splits these functions, put the guard on
+  whatever now decides native window opacity, the window backdrop/material and
+  the resolved intensity. If upstream adds a new translucency path (a new
+  setting, material or CSS surface), lock it the same way. Keep the
+  no-see-through script loaded from `index.html`.
 
 ## Pending review
 

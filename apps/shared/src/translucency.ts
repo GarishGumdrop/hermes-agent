@@ -170,6 +170,14 @@ export interface TranslucencyBook {
   dark: Partial<TranslucencyValues>
 }
 
+/**
+ * FORK (no see-through, FORK.md): the user never wants any part of Hermes to
+ * be see-through. Every native opacity, glass backdrop and resolved intensity
+ * in this module answers "opaque" while this is true, whatever settings,
+ * files, IPC payloads or defaults say. Deliberately not a setting.
+ */
+export const NO_SEE_THROUGH = true
+
 export const TRANSLUCENCY_MIN = 0
 export const TRANSLUCENCY_MAX = 100
 
@@ -200,7 +208,10 @@ export function clampIntensity(value: unknown): number {
  * row should not be shown at all.
  */
 export function translucencySupportedOn(platform: string): boolean {
-  return platform === 'darwin' || platform === 'win32'
+  // FORK (no see-through, FORK.md): never offered, on any OS.
+  void platform
+
+  return false
 }
 
 /**
@@ -209,6 +220,11 @@ export function translucencySupportedOn(platform: string): boolean {
  * older Windows: no.
  */
 export function glassSupportedOn(platform: string, release = ''): boolean {
+  // FORK (no see-through, FORK.md): no native glass, on any OS.
+  if (NO_SEE_THROUGH) {
+    return false
+  }
+
   if (platform === 'darwin') {
     return true
   }
@@ -260,11 +276,12 @@ export function normalizeScope(value: unknown): GlassScope {
 /** Parse a persisted translucency.json / IPC payload into a safe state. */
 export function normalizeState(payload: unknown, glassSupported: boolean): TranslucencyState {
   const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
-  const intensity = clampIntensity(record.intensity)
+  // FORK (no see-through): whatever a file or IPC message says, the window is opaque.
+  const intensity = NO_SEE_THROUGH ? 0 : clampIntensity(record.intensity)
 
   return {
     intensity,
-    fade: clampIntensity(record.fade),
+    fade: NO_SEE_THROUGH ? 0 : clampIntensity(record.fade),
     mode: normalizeMode(record.mode, glassSupported, intensity),
     material: normalizeMaterial(record.material),
     scope: normalizeScope(record.scope)
@@ -288,6 +305,7 @@ export function defaultTranslucencyState(
 ): TranslucencyState {
   return {
     ...defaultTranslucencyValues(appearance, isWindows),
+    ...(NO_SEE_THROUGH ? { intensity: 0, fade: 0 } : {}),
     mode: normalizeMode(undefined, glassSupported)
   }
 }
@@ -357,8 +375,9 @@ export function resolveTranslucency(
 
   return {
     mode: book.mode,
-    intensity: slot.intensity ?? book.base.intensity ?? fallback.intensity,
-    fade: slot.fade ?? book.base.fade ?? fallback.fade,
+    // FORK (no see-through): the saved book is ignored for intensity and fade.
+    intensity: NO_SEE_THROUGH ? 0 : (slot.intensity ?? book.base.intensity ?? fallback.intensity),
+    fade: NO_SEE_THROUGH ? 0 : (slot.fade ?? book.base.fade ?? fallback.fade),
     material: slot.material ?? book.base.material ?? fallback.material,
     scope: slot.scope ?? book.base.scope ?? fallback.scope
   }
@@ -401,6 +420,11 @@ function opacityRamp(lever: number): number {
  * at 0.9999. Off has to mean off.
  */
 export function windowOpacityFor(state: TranslucencyState): number {
+  // FORK (no see-through): the native window is always fully opaque.
+  if (NO_SEE_THROUGH) {
+    return 1
+  }
+
   if (state.mode !== 'glass') {
     return opacityRamp(state.intensity)
   }
@@ -413,7 +437,8 @@ export function windowOpacityFor(state: TranslucencyState): number {
  * decide a window's backing, the renderer to decide whether to thin surfaces.
  */
 export function glassActive({ intensity, mode }: TranslucencyState): boolean {
-  return mode === 'glass' && intensity > 0
+  // FORK (no see-through): glass is never active.
+  return !NO_SEE_THROUGH && mode === 'glass' && intensity > 0
 }
 
 /**
