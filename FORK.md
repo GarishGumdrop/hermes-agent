@@ -257,8 +257,6 @@ This file is the list that review works from.
   setting, material or CSS surface), lock it the same way. Keep the
   no-see-through script loaded from `index.html`.
 
-## Pending review
-
 ### 7. Configurable skill description length, checked before a new skill is staged
 
 - **Files:** `agent/skill_utils.py` (`skill_prompt_desc_limit()`, `clip_skill_description()`
@@ -275,6 +273,10 @@ This file is the list that review works from.
 - **If it breaks:** keep the limit read from config in one function; the budget check must run on
   every write that reaches the root SKILL.md (that is where NousResearch put it); and the create
   checks must keep running before a skill write is staged.
+- **Decided (3 Nov 2026):** the user keeps the fork's configurable limit (his is 100) over
+  NousResearch's fixed 60 (3a3bf5648e, df92e33081, b66ab2bb7b). That difference is settled and does
+  not send this entry back to Pending review; a later NousResearch change to skill descriptions is
+  reviewed as usual.
 - **Differences (NousResearch 3a3bf5648e, df92e33081, b66ab2bb7b):** upstream enforces a fixed
   60 characters — the write-time budget check, the index clip width, the tool description and the
   authoring-standards test all hard-code 60, and over-long index descriptions are clipped at a word
@@ -306,6 +308,10 @@ This file is the list that review works from.
   without a restart.
 - **If it breaks:** keep a watcher-side signal over the skill/plugin folders and config, and a
   desktop handler that calls `invalidateSlashCompletions()` on it.
+- **Decided (3 Nov 2026):** the user keeps the fork's signal and Desktop handler over NousResearch's
+  (20acba0376, a03d7d8a08, 6bcf096ef4, 1f8c6134c2, 9de32e7be9). That difference is settled and does
+  not send this entry back to Pending review; a later NousResearch change to the slash menu or the
+  change watcher is reviewed as usual.
 - **Differences (NousResearch 20acba0376, merge a03d7d8a08 / commits 6bcf096ef4, 1f8c6134c2, 9de32e7be9):**
   NousResearch now has its own `skills.changed` broadcast with the same name, used by the terminal
   TUI to refetch its command list. Their signal (`agent.skill_commands.published_scopes_signature`)
@@ -317,6 +323,10 @@ This file is the list that review works from.
   Their test `test_a_skill_installed_in_another_sessions_repo_broadcasts_skills_changed` expects
   the project-folder watch the fork's signal does not have, so it carries a one-line skip marker
   naming this entry.
+
+## Pending review
+
+None.
 
 ## Retired
 
