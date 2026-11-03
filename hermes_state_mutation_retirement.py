@@ -262,6 +262,8 @@ def delete_in_transaction(db, conn, session_id, payload):
     from hermes_state_mutation_guards import require_idle, delete_targets
     targets = delete_targets(conn, session_id)
     require_idle(db, conn, targets)
+    from hermes_state_trash import snapshot_for_trash  # fork change 19: undo for deletes
+    snapshot_for_trash(conn, targets, requested=session_id)
     retire_sessions(conn, targets)
     for sid in targets:
         db._bump_conversation_generation(conn, sid, 'session_reset')

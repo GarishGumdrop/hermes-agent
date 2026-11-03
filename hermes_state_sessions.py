@@ -1751,6 +1751,8 @@ class SessionSessionsMixin:
                 for covered_id, expected in expected_display_messages.items()
             ):
                 return False
+            from hermes_state_trash import snapshot_for_trash  # fork change 19: undo for deletes
+            snapshot_for_trash(conn, scope, requested=session_id)
             from hermes_state_mutation_retirement import retire_sessions
             retire_sessions(conn, scope)
             removed_ids.extend(_delete_delegate_children(conn, scope))
@@ -1896,6 +1898,8 @@ class SessionSessionsMixin:
                 if not existing:
                     return 0
                 expanded = expand(existing)
+            from hermes_state_trash import snapshot_for_trash  # fork change 19: undo for deletes
+            snapshot_for_trash(conn, expanded, requested=existing[0] if len(existing) == 1 else None)
             from hermes_state_mutation_retirement import retire_sessions
             retire_sessions(conn, expanded)
             removed_ids.extend(_delete_delegate_children(conn, expanded))

@@ -3754,8 +3754,11 @@ class TestVacuum:
         assert result["vacuumed"] is True
         assert vacuum_calls == [True]
 
-    def test_freelist_ratio_reads_real_pragmas(self, db):
+    def test_freelist_ratio_reads_real_pragmas(self, db, monkeypatch):
         """Real-DB check: freeing most of the file pushes the ratio past the gate."""
+        # Fork change 19 (FORK.md): the session trash keeps deleted rows' bytes for its
+        # retention window; this checks the freelist after a permanent delete: trash off.
+        monkeypatch.setattr('hermes_state_trash.retention_days', lambda: 0.0)
         from hermes_state_common import AUTO_VACUUM_MIN_FREELIST_RATIO
 
         db.create_session(session_id="keep", source="cli")

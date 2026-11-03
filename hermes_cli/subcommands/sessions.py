@@ -311,6 +311,8 @@ def build_sessions_parser(subparsers, *, cmd_sessions: Callable) -> None:
         "session_ids", nargs="+", help="Session ID(s) or unique prefix(es) to unpin")
 
     sessions_pinned = sessions_subparsers.add_parser("pinned", help="List pinned sessions")
+    from hermes_cli.sessions_trash_cmd import add_trash_parser  # fork change 19
+    add_trash_parser(sessions_subparsers)
     add_json_flag(sessions_pinned, "Emit machine-readable JSON (for backup/restore scripting)")
 
     sessions_retitle = sessions_subparsers.add_parser(

@@ -12,6 +12,7 @@ import {
 import { defaultNewSessionTarget, prepareDefaultNewSession } from '@/app/session/new-session-route'
 import { revealTreePane } from '@/components/pane-shell/tree/store'
 import { setWorkspaceScope } from '@/components/pane-shell/workspace-scope'
+import { offerDeleteUndo } from '@/fork/session-trash/undo'
 import {
   deleteSession,
   fetchStoredTranscriptAcrossBackends,
@@ -3135,6 +3136,8 @@ export function useSessionActions({
         }
 
         await deleteSession(storedSessionId, removedOwner)
+        // Fork change 19: 10 s Undo; the restored chat opens when the deleted one was open.
+        offerDeleteUndo(storedSessionId, removedOwner, wasSelected ? newId => navigate(sessionRoute(newId)) : undefined)
 
         dropTranscriptTailEverywhere(storedSessionId)
         // Only after the RPC lands — the optimistic eviction above can roll

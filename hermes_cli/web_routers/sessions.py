@@ -535,6 +535,58 @@ async def delete_empty_sessions_endpoint(profile: Optional[str] = None):
     return {"ok": True, "deleted": deleted}
 
 
+# Fork change 19 (hermes_state_trash.py): Recently deleted / Undo. Literal paths, so they sit
+# above the templated ``/api/sessions/{session_id}`` family like the routes around them.
+from pydantic import BaseModel as _TrashBody
+
+
+class SessionTrashRestore(_TrashBody):
+    trash_id: Optional[str] = None
+    session_id: Optional[str] = None
+    profile: Optional[str] = None
+
+
+class SessionTrashPurge(_TrashBody):
+    trash_id: Optional[str] = None
+    all: bool = False
+    profile: Optional[str] = None
+
+
+@manage_router.get("/api/sessions/trash")
+async def list_session_trash_endpoint(profile: Optional[str] = None):
+    """Recently deleted sessions, newest first, and how long each stays restorable."""
+    import hermes_state_trash as trash
+    entries = await asyncio.to_thread(_with_db, profile, trash.list_trash, read_only=False)
+    return {"entries": entries, "retention_days": trash.retention_days()}
+
+
+@manage_router.post("/api/sessions/trash/restore")
+async def restore_session_trash_endpoint(body: SessionTrashRestore):
+    """Undo a delete: ``trash_id`` names the entry, or ``session_id`` (any id the delete removed)
+    picks the newest entry holding it. The conversation comes back under a new id."""
+    import hermes_state_trash as trash
+    if not (body.trash_id or body.session_id):
+        raise HTTPException(status_code=400, detail="trash_id or session_id required")
+    try:
+        result = await asyncio.to_thread(_with_db, body.profile, lambda db: trash.restore_from_trash(
+            db, body.trash_id, session_id=body.session_id), read_only=False)
+    except trash.TrashNotFound:
+        raise HTTPException(status_code=404, detail="not_in_trash")
+    return {"ok": True, **result}
+
+
+@manage_router.post("/api/sessions/trash/purge")
+async def purge_session_trash_endpoint(body: SessionTrashPurge):
+    """Delete forever: one entry (``trash_id``) or every entry (``all``)."""
+    import hermes_state_trash as trash
+    if not (body.trash_id or body.all):
+        raise HTTPException(status_code=400, detail="trash_id or all required")
+    profile = destructive_profile(body.profile, "POST /api/sessions/trash/purge")
+    removed = await asyncio.to_thread(_with_db, profile, lambda db: trash.purge_trash(
+        db, body.trash_id, everything=body.all), read_only=False)
+    return {"ok": True, "removed": removed}
+
+
 @manage_router.get("/api/sessions/stats")
 async def get_session_stats(profile: Optional[str] = None):
     """Session-store statistics (mirrors `hermes sessions stats`)."""

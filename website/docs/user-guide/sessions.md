@@ -513,6 +513,21 @@ Deleting a session that is still open in a running chat does not stop that chat:
 
 Deleting a session while a turn is actively executing or compressing is refused (exits with code 1) to prevent transcript loss under the live agent. Wait for the active turn or compression to complete before deleting.
 
+### Undo a Delete (Recently Deleted)
+
+A session you delete (desktop sidebar, dashboard, `hermes sessions delete`, TUI) stays restorable for `sessions.trash_retention_days` days (default **7**). This is meant as an undo for accidental deletes, not as an archive. Empty-session sweeps and `hermes sessions prune` are housekeeping and are not kept.
+
+- **Desktop:** after a delete, a **Session deleted · Undo** toast stays up for 10 seconds. Later, use **Settings → Sessions → Recently deleted** (Restore or Delete forever).
+- **Terminal:**
+
+```bash
+hermes sessions trash list                 # recently deleted, with time left
+hermes sessions trash restore <trash id>   # or the deleted session's id
+hermes sessions trash purge <trash id>     # delete forever (--all for everything)
+```
+
+A restored session comes back with its messages, title, linked compression segments and subagent runs, but under a **new session id**: Hermes never reuses a deleted id. If another session took the title in the meantime, the restored one is titled `<title> (restored)`. Set `sessions.trash_retention_days: 0` to turn this off, so that deletes are immediate and permanent.
+
 ### Rename a Session
 
 ```bash

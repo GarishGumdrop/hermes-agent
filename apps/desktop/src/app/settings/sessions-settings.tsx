@@ -5,6 +5,7 @@ import { restoreListedSession } from '@/app/session/hooks/use-session-actions/ut
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tip } from '@/components/ui/tooltip'
+import { RecentlyDeletedSessions } from '@/fork/session-trash/recently-deleted'
 import {
   deleteSession,
   getHermesConfigRecord,
@@ -217,6 +218,9 @@ function ArchivedSessionsSettings({ includeDefaultDirectory }: { includeDefaultD
           })}
         </div>
       )}
+
+      {/* Fork change 19: restorable for sessions.trash_retention_days after a delete. */}
+      <RecentlyDeletedSessions />
     </SettingsContent>
   )
 }

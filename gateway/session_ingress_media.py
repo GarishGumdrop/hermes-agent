@@ -513,7 +513,7 @@ def collect_unheld_api_images(db):
         return 0
 
 
-def _history_mentions(conn, references, after_id=0):
+def _history_mentions(conn, references, after_id=0, table='messages'):
     """Candidate paths any transcript row (id > after_id) mentions raw or JSON-escaped, in ONE
     messages pass. Rows are prefiltered in SQL on the literal text before each candidate's digest
     directory, so only rows that could name a candidate reach Python's exact substring test."""
@@ -528,7 +528,7 @@ def _history_mentions(conn, references, after_id=0):
     prefixes = sorted({reference['sha256'] for reference in references})
     # The digests are ONE bound JSON array, never one ``instr`` term each: the statement's size
     # must not grow with the candidate count (SQLite's expression-depth limit fails at ~1000 terms).
-    query = ('WITH digests(value) AS MATERIALIZED (SELECT value FROM json_each(?)) SELECT content FROM messages '
+    query = ('WITH digests(value) AS MATERIALIZED (SELECT value FROM json_each(?)) SELECT content FROM ' + table + ' '
              'WHERE EXISTS (SELECT 1 FROM digests WHERE instr(content, digests.value))' + (' AND id>?' if after_id else ''))
     mentioned = set()
     for (content,) in conn.execute(query, (json.dumps(prefixes), *((after_id,) if after_id else ()))):
@@ -573,6 +573,8 @@ def release_unheld_media(db, references, *, retain_history=True):
             return 0
         if retain_history:
             held |= _history_mentions(conn, references, after_id=last_id)
+            from hermes_state_trash import trash_media_mentions  # fork change 19: trashed copies keep media
+            held |= trash_media_mentions(conn, references)
         released = 0
         for reference in references:
             path = Path(reference['path'])

@@ -114,6 +114,8 @@ def referenced_spillover_names(spill_dir) -> set | None:
             rows = conn.execute(
                 f"SELECT content, api_content FROM messages WHERE {SPILLOVER_SQL_FILTER} LIMIT 20001"
             ).fetchall()
+            from hermes_state_trash import trash_spillover_rows  # fork change 19: trashed copies keep archives
+            rows += trash_spillover_rows(conn, SPILLOVER_SQL_FILTER, 20001)
         finally:
             conn.close()
     except (sqlite3.Error, OSError):

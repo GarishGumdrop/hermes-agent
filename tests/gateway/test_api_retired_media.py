@@ -15,7 +15,10 @@ def image(data):
 
 
 
-def test_rejected_api_images_are_collected_and_history_owns_accepted_images(api, owner):
+def test_rejected_api_images_are_collected_and_history_owns_accepted_images(api, owner, monkeypatch):
+    # Fork change 19 (FORK.md): with the session trash on, a deleted chat's images stay for its
+    # retention window. This test is about collection on a permanent delete: trash off.
+    monkeypatch.setattr('hermes_state_trash.retention_days', lambda: 0.0)
     from gateway.session_ingress_media import _media_root
     kwargs = dict(session_id='s', request_id='one', conversation_history=[])
     _, _, row = admit_api_turn(api, user_message=image(PNG), **kwargs)

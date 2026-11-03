@@ -699,6 +699,9 @@ def _cmd_delete(db, args):
             print(f"Cannot delete session '{resolved_session_id}': {exc.reason}")
         return 1
     print(f"Deleted session '{resolved_session_id}'.")
+    from hermes_state_trash import retention_days  # fork change 19
+    if retention_days() > 0:
+        print(f"Undo with: hermes sessions trash restore {resolved_session_id}")
 
 
 #: Age floor for `prune --never-active`; generous: a young never-active row may be a chat nobody replied to yet.
@@ -1377,6 +1380,11 @@ def _cmd_discard(args):
     return cmd_discard(args)
 
 
+def _cmd_trash(db, args):  # fork change 19
+    from hermes_cli.sessions_trash_cmd import cmd_trash
+    return cmd_trash(db, args)
+
+
 def _cmd_adopt(args):
     from hermes_cli.sessions_adopt import cmd_adopt
     return cmd_adopt(args)
@@ -1398,6 +1406,7 @@ _DB_HANDLERS = {
     "clean-markers": _cmd_clean_markers, "optimize-storage": _cmd_optimize_storage,
     "repair-routing": _cmd_repair_routing, "repair-prompts": _cmd_repair_prompts, "stats": _cmd_stats,
     "refresh-prompts": _cmd_refresh_prompts,
+    "trash": _cmd_trash,
 }
 
 

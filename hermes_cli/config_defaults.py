@@ -2292,6 +2292,10 @@ DEFAULT_CONFIG = {
         # VACUUM after a prune that deleted rows (SQLite never reclaims disk on DELETE, #54189). It blocks
         # writes (~seconds per 100MB): only at startup, only when ≥1 session went AND freelist/page_count > 25%.
         "vacuum_after_prune": True,
+        # Fork change 19 (hermes_state_trash.py): days a user-deleted session stays restorable
+        # (desktop Undo / Settings > Sessions > Recently deleted / `hermes sessions trash`).
+        # An undo for accidental deletes, not an archive. 0 turns the trash off.
+        "trash_retention_days": 7,
         # Minimum days between VACUUM rewrites; pruning keeps its normal cadence.
         "min_vacuum_interval_days": 30,
         # Minimum hours between auto-maintenance runs (tracked in state.db state_meta, shared across

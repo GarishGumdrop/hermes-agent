@@ -324,6 +324,51 @@ This file is the list that review works from.
   the project-folder watch the fork's signal does not have, so it carries a one-line skip marker
   naming this entry.
 
+### 19. Deleted sessions can be undone for 7 days
+
+- **Files:**
+  - Core: `hermes_state_trash.py` (new: the trash tables `session_trash` /
+    `session_trash_messages`, created on first use; snapshot, list, restore, purge; retention);
+    one hook line each in `hermes_state_sessions.py` (`delete_session`, `delete_sessions`) and
+    `hermes_state_mutation_retirement.py` (`delete_in_transaction`, the canonical delete the
+    desktop's `DELETE /api/sessions/<id>` runs), each calling `snapshot_for_trash` right before
+    `retire_sessions`; `gateway/session_ingress_media.py` (`_history_mentions` takes a `table`;
+    `release_unheld_media` keeps media a trashed message mentions); `tools/tool_result_storage.py`
+    (`referenced_spillover_names` counts trashed messages); `hermes_cli/config_defaults.py`
+    (`sessions.trash_retention_days`, default 7).
+  - Surfaces: `hermes_cli/web_routers/sessions.py` (`GET /api/sessions/trash`,
+    `POST /api/sessions/trash/restore`, `POST /api/sessions/trash/purge`, literal routes above the
+    `{session_id}` family); `hermes_cli/sessions_trash_cmd.py` (new: `hermes sessions trash
+    list|restore|purge`), registered in `hermes_cli/subcommands/sessions.py` and
+    `hermes_cli/sessions_cmd.py` (also prints the undo command after `hermes sessions delete`).
+  - Desktop: `apps/desktop/src/fork/session-trash/` (new: `api.ts`, `undo.ts` (the 10 s toast),
+    `recently-deleted.tsx`); hooks in `src/app/session/hooks/use-session-actions/index.ts` (after
+    `await deleteSession(...)`) and `src/app/settings/sessions-settings.tsx` (mounts Recently
+    deleted below Archived).
+  - Docs and tests: `website/docs/user-guide/sessions.md` ("Undo a Delete");
+    `tests/hermes_state/test_session_trash.py`, `tests/hermes_cli/test_web_session_trash.py`,
+    `tests/gateway/test_session_trash_resume.py`, `apps/desktop/src/fork/session-trash/session-trash.test.ts`.
+    Two upstream tests that check what a delete frees at once
+    (`tests/gateway/test_api_retired_media.py::test_rejected_api_images_are_collected_and_history_owns_accepted_images`,
+    `tests/hermes_state/test_hermes_state.py::TestVacuum::test_freelist_ratio_reads_real_pragmas`) turn the
+    trash off with one monkeypatch line naming this entry.
+- **Purpose:** a delete was immediate and permanent, so an accidental click lost the
+  conversation. Now a user delete (desktop, dashboard, CLI, TUI) copies the rows into the trash in
+  the delete's own transaction. The desktop shows "Session deleted · Undo" for 10 s, and Settings >
+  Sessions > Recently deleted restores or deletes forever for `sessions.trash_retention_days` days
+  (default 7; 0 = off). It is an undo for accidental deletes, not an archive. Housekeeping deletes
+  (empty-session sweeps, prunes) are not kept. A restore puts the conversation back (messages
+  with their original ids, title, compression segments, subagent runs, usage) under new session ids
+  (the retirement fence keeps a deleted id dead), without its old gateway route, so the next native
+  resume adopts it as local history and it continues normally.
+- **If it breaks:** the code points it depends on: the three delete paths calling `retire_sessions`
+  inside their write transaction (a new user-facing delete path needs the same one-line
+  `snapshot_for_trash` call before its `retire_sessions`); the `sessions` / `messages` columns
+  (snapshots are stored per column name and restored onto whatever columns exist); the legacy
+  adoption rule for a routeless local row (`hermes_state_local_migration.validate_legacy_row`); the
+  two media collectors (`release_unheld_media`, `referenced_spillover_names`); the toast API
+  (`notify` with `action`) and `restoreListedSession` on the desktop.
+
 ## Pending review
 
 None.
