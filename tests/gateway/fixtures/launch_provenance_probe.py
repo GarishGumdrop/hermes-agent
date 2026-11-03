@@ -2,7 +2,7 @@
 
 Both client routes that create sessions for a terminal command are driven end to end against a
 stand-in model server: the classic CLI (``hermes chat -q``, the route agents' commands take) and
-``run_gateway_chat`` with a titled create (the route the nightly update script takes).
+``run_gateway_chat`` with a titled create (the route a program starting its own sessions takes).
 """
 import json
 import os

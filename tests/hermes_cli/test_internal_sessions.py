@@ -192,7 +192,7 @@ class TestStartedBy:
 
     def test_real_daemon_records_who_started_each_session(self, tmp_path):
         """Both terminal routes, through a real daemon: the classic CLI (agents' ``hermes chat -q``)
-        and the nightly update's titled ``run_gateway_chat`` create."""
+        and a program's titled ``run_gateway_chat`` create."""
         import subprocess
         import sys
         from pathlib import Path

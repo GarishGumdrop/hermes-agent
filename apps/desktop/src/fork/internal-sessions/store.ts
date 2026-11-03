@@ -3,7 +3,7 @@
  * Internal section.
  *
  * Hermes saves every model session, including the ones nobody started as a conversation:
- * programs such as the nightly update, one-off `hermes chat` commands, subagent runs, Bot Mode's
+ * programs, one-off `hermes chat` commands, subagent runs, Bot Mode's
  * chats and empty sessions. The main session list leaves those out. The backend now sends them
  * as an `internal` slice of the batched sidebar request (rows, their count, and whether the
  * `sessions.show_internal` switch has moved them into the main list), and this store keeps that
@@ -20,7 +20,7 @@ import type { SessionInfo } from '@/types/hermes'
 
 /** A row of the Internal section: an ordinary sidebar row plus what started it. */
 export interface InternalSessionInfo extends SessionInfo {
-  /** The heading the row is listed under, e.g. "Nightly update" or "Started by “…”". */
+  /** The heading the row is listed under, e.g. "Started by “…”". */
   internal_origin?: null | string
   launched_by?: null | string
   launched_from?: null | string

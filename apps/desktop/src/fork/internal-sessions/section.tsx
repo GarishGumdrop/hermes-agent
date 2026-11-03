@@ -1,8 +1,7 @@
 /**
  * FORK ADDITION (GarishGumdrop/hermes-agent, fork change 16) — the sidebar's Internal section.
  *
- * Lists the saved sessions the main list leaves out (programs such as the nightly update,
- * one-off commands, subagent runs, Bot Mode's chats, empty sessions) under a heading per origin,
+ * Lists the saved sessions the main list leaves out (programs, one-off commands, subagent runs, Bot Mode's chats, empty sessions) under a heading per origin,
  * with their count in the section header, so nothing is left out without saying so. The header's
  * switch sets `sessions.show_internal`, which lists them in the main list instead (and in the
  * project view and the terminal's session lists). Rows open, pin, archive and delete like any

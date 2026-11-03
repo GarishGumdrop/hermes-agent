@@ -1,8 +1,9 @@
 # FORK.md — what this fork changes and why
 
-This is GarishGumdrop's fork of NousResearch/hermes-agent. Every night `scripts/fork_sync.py`
-(change 11) merges NousResearch's latest `main` into this fork and reviews the NousResearch commits
-that meet one of the changes below. This file is the list that review works from.
+This is GarishGumdrop's fork of NousResearch/hermes-agent. When the user asks for an update, the
+agent in that conversation merges NousResearch's latest `main` into this fork and reviews the
+NousResearch commits that meet one of the changes below (procedure: skill `hermes-local-install`).
+This file is the list that review works from.
 
 **When a NousResearch change meets a fork change**
 
@@ -113,45 +114,6 @@ that meet one of the changes below. This file is the list that review works from
 - **If it breaks:** keep a backslash in whatever set of characters marks "this is part of a path,
   do not rewrite".
 
-### 11. Nightly merge and review of NousResearch's main
-
-- **Files:** `scripts/fork_sync.py`, `scripts/fork_sync/triage.md`, `scripts/fork_sync/review.md`
-  (all new). Task Scheduler's "Hermes Auto Update" runs the script through Hermes's launcher
-  (`.hermes\bin\hermes.exe --run-module scripts.fork_sync --from-task`, falling back to
-  `hermes.CMD` where that is what the install published) inside
-  `powershell.exe -NoExit`, so its progress window stays open until the user closes it. The task's
-  multiple-instances policy is Parallel, so an open window never blocks the next night's run; an OS
-  lock (`fork-sync/run.lock`) stops a second run while one is in progress.
-- **Purpose:** merges NousResearch's main into the fork; Sonnet reads the new commit titles against
-  this file, the user's plugins and his edited built-in skills; flagged items or git conflicts go to
-  one session on the user's own model, which applies the rules above. The result is pushed, then
-  `hermes update --yes` installs it and the desktop app is reopened if it was open. Each model call's
-  cost goes to `<hermes home>/fork-sync/spend.jsonl`. A failure writes `update-hold.json`.
-- **Reliability rules (each fixes a failure seen on 2026-10-22):** the launcher builds the Python
-  environment for changed lock files before any session starts (a session process gets only 60
-  seconds to start, too little for a build). Model calls retry both models for about 10 minutes.
-  Child steps use Hermes's own environment Python (`hermes_python()`), never `sys.executable`.
-  Install problems (`hermes update` exits 0 even when the desktop build fails) and a report that
-  could not be written become notes in `update-notes.json`; nothing fails silently.
-- **The report is a working conversation (user requirement, built 2 Nov):** the report session is
-  created on the user's normal setup (his default model, toolsets, rules, memory, plugins and
-  approvals), not in safe mode, so he can keep working in it after the run: ask questions, finish a
-  held merge. A session's launch settings are frozen at creation, so this must hold at creation;
-  never give the report `tools=[]` or safe mode again. Only its first, unattended turn auto-approves;
-  the record names the review's session id and scratch copy so the conversation can investigate.
-- **Scratch copy outside the Hermes home:** `%LOCALAPPDATA%\hermes-fork-sync-work`. The test suite
-  refuses file access inside the Hermes home, so tests run in a copy there all fail; on 2 Nov that
-  alone held the update. The review is told failures in upstream-only tests or ones the fork shares
-  do not hold the update.
-- **If it breaks:** usually `hermes_cli.gateway_chat.run_gateway_chat`, `pm.environments.committed_venv`
-  or `tools/skills_sync.py` changed; adapt the calls in the script.
-- **Its sessions (change 16):** every model session is titled "Nightly update <day> <month> <HH:MM>:
-  <step>" (", attempt N" from the second attempt) and records `launched_by` "Nightly update"; the
-  run ends with `cleanup()`, which deletes `tool` and `oneshot` sessions inactive for longer than
-  `sessions.internal_retention_days` (default 30, 0 = keep; pinned and archived ones are kept) one
-  by one with `hermes sessions delete` (prune cannot: it deletes only ended sessions, and gateway
-  sessions started by `run_gateway_chat` never end), and puts every outcome in the report.
-
 ### 12. Assistant code blocks wrap long lines instead of scrolling sideways
 
 - **Files:** `apps/desktop/src/components/chat/code-card.tsx` (wrapping
@@ -212,7 +174,7 @@ that meet one of the changes below. This file is the list that review works from
 - **If it breaks:** keep generation removal tolerant of undeletable mapped
   files on Windows, and keep one failure from aborting the sweep.
 
-### 16. Internal sessions are listed, labelled and cleaned up instead of silently hidden
+### 16. Internal sessions are listed and labelled instead of silently hidden
 
 - **Files:**
   - Rule and lists: `hermes_cli/internal_sessions.py` (new: what counts as internal, the Internal
@@ -222,7 +184,7 @@ that meet one of the changes below. This file is the list that review works from
     (project view, `project_tree_scope`); `hermes_cli/sessions_cmd.py` (`hermes sessions list`,
     `terminal_list_scope`, and a line saying how many it left out); `hermes_cli/cli_session_mixin.py`
     and `hermes_cli/console_engine.py` (`/resume` and console lists, `internal_exclusions`);
-    `hermes_cli/config_defaults.py` (`sessions.show_internal`, `sessions.internal_retention_days`);
+    `hermes_cli/config_defaults.py` (`sessions.show_internal`);
     `tui_gateway/methods_config_set.py` (config.set accepts `sessions.show_internal`).
   - Started by: `tui_gateway/contracts/canonical_sessions.py` (`launched_from`, `launched_by` on
     `CanonicalCreateParams`, regenerated into `apps/shared/src/gateway-contract.generated.ts` and
@@ -235,7 +197,6 @@ that meet one of the changes below. This file is the list that review works from
     `src/app/session/hooks/use-session-list-actions.ts` (asks for and stores the slice; refreshes when
     the switch flips), `src/app/chat/sidebar/sessions-section.tsx` (`grouping: 'origin'`) and
     `src/app/chat/sidebar/index.tsx` (mounts the section after Cron jobs).
-  - Nightly update: `scripts/fork_sync.py` (see change 11).
   - Tests: `tests/hermes_cli/test_internal_sessions.py`, `tests/gateway/fixtures/launch_provenance_probe.py`
     (a real daemon and both client routes).
 - **Purpose:** Hermes saves every model session, and each list (sidebar, project view, terminal
@@ -259,7 +220,7 @@ that meet one of the changes below. This file is the list that review works from
   branch); tests in `tests/hermes_cli/test_update_cua_pm.py` (the three Windows tests).
 - **Purpose:** on Windows, `hermes update` printed "cua-driver refresh deferred (autostart
   registration requires UAC)" on every run where the driver was installed, without checking
-  anything, so the nightly report carried it every night. NousResearch wrote it (5e4a2a3d24) when
+  anything, so every update's output carried it. NousResearch wrote it (5e4a2a3d24) when
   every install registered the `cua-driver-serve` logon task. Since 959c7649fd (#97389) that task is
   opt-in (`computer_use.autostart`) and the default registers nothing. Now, with the task off, the
   update installs a new pinned driver unelevated, as on Linux, and says nothing when the pin is
@@ -358,6 +319,15 @@ that meet one of the changes below. This file is the list that review works from
   naming this entry.
 
 ## Retired
+
+### 11. Nightly merge and review of NousResearch's main
+
+- **Removed 3 Nov 2026 by the user's decision:** Hermes is no longer updated on a schedule. The
+  nightly script (`scripts/fork_sync.py` and its triage/review prompts), its cheap-model sessions,
+  report threads, run files and the automatic cleanup of old internal sessions
+  (`sessions.internal_retention_days`) are gone. Updates happen only when the user asks; the agent
+  in that conversation does the merge and review itself (skill `hermes-local-install`). Never bring
+  back a schedule or a separate model for it.
 
 ### 15. Security update for the eMudhra CA key compromise
 

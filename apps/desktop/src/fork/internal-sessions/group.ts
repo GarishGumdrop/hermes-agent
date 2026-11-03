@@ -1,7 +1,7 @@
 /**
  * FORK ADDITION (GarishGumdrop/hermes-agent, fork change 16) — the Internal section's headings.
  *
- * The section lists its rows under one heading per origin ("Nightly update", "Started by “…”",
+ * The section lists its rows under one heading per origin ("Started by “…”",
  * "Bot chats (Bots tab)"), using the flat list's labelled dividers, so every row says what
  * started it whatever row density the user has chosen.
  */

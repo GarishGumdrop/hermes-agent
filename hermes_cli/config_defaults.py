@@ -2289,9 +2289,6 @@ DEFAULT_CONFIG = {
         # commands, subagent runs, bot chats, empty sessions) in the main session lists instead of
         # only in the desktop sidebar's Internal section. The section's header switch sets it.
         "show_internal": False,
-        # Fork change 16: the nightly update deletes program and one-off-command sessions (sources
-        # tool and oneshot) inactive for this many days; pinned and archived ones are kept. 0 keeps all.
-        "internal_retention_days": 30,
         # VACUUM after a prune that deleted rows (SQLite never reclaims disk on DELETE, #54189). It blocks
         # writes (~seconds per 100MB): only at startup, only when ≥1 session went AND freelist/page_count > 25%.
         "vacuum_after_prune": True,
