@@ -552,38 +552,51 @@ class SessionTrashPurge(_TrashBody):
     profile: Optional[str] = None
 
 
+async def _on_session_store(request: Request, profile: Optional[str], fn, *, write: bool):
+    """Run ``fn(db)`` on the store that may take it. When this process is the gateway (the
+    desktop's backend, ``hermes gateway run``), the gateway owns the store: use its own
+    connection, as ``owner-backfill`` does. Opening a second writer there is refused with a 409
+    ("Gateway runtime already owns profile"). Otherwise (standalone dashboard / serve) the
+    offline store is the owner."""
+    owner_db = _owner_db_for(request, profile)
+    if owner_db is not None:
+        return await asyncio.to_thread(fn, owner_db)
+    return await asyncio.to_thread(_with_db, profile, fn, read_only=not write)
+
+
 @manage_router.get("/api/sessions/trash")
-async def list_session_trash_endpoint(profile: Optional[str] = None):
-    """Recently deleted sessions, newest first, and how long each stays restorable."""
+async def list_session_trash_endpoint(request: Request, profile: Optional[str] = None):
+    """Recently deleted sessions, newest first, and how long each stays restorable. A read:
+    expired entries are filtered out here and purged by the next delete."""
     import hermes_state_trash as trash
-    entries = await asyncio.to_thread(_with_db, profile, trash.list_trash, read_only=False)
+    entries = await _on_session_store(request, profile, lambda db: trash.list_trash(db, purge=False), write=False)
     return {"entries": entries, "retention_days": trash.retention_days()}
 
 
 @manage_router.post("/api/sessions/trash/restore")
-async def restore_session_trash_endpoint(body: SessionTrashRestore):
+async def restore_session_trash_endpoint(body: SessionTrashRestore, request: Request):
     """Undo a delete: ``trash_id`` names the entry, or ``session_id`` (any id the delete removed)
     picks the newest entry holding it. The conversation comes back under a new id."""
     import hermes_state_trash as trash
     if not (body.trash_id or body.session_id):
         raise HTTPException(status_code=400, detail="trash_id or session_id required")
     try:
-        result = await asyncio.to_thread(_with_db, body.profile, lambda db: trash.restore_from_trash(
-            db, body.trash_id, session_id=body.session_id), read_only=False)
+        result = await _on_session_store(request, body.profile, lambda db: trash.restore_from_trash(
+            db, body.trash_id, session_id=body.session_id), write=True)
     except trash.TrashNotFound:
         raise HTTPException(status_code=404, detail="not_in_trash")
     return {"ok": True, **result}
 
 
 @manage_router.post("/api/sessions/trash/purge")
-async def purge_session_trash_endpoint(body: SessionTrashPurge):
+async def purge_session_trash_endpoint(body: SessionTrashPurge, request: Request):
     """Delete forever: one entry (``trash_id``) or every entry (``all``)."""
     import hermes_state_trash as trash
     if not (body.trash_id or body.all):
         raise HTTPException(status_code=400, detail="trash_id or all required")
     profile = destructive_profile(body.profile, "POST /api/sessions/trash/purge")
-    removed = await asyncio.to_thread(_with_db, profile, lambda db: trash.purge_trash(
-        db, body.trash_id, everything=body.all), read_only=False)
+    removed = await _on_session_store(request, profile, lambda db: trash.purge_trash(
+        db, body.trash_id, everything=body.all), write=True)
     return {"ok": True, "removed": removed}
 
 

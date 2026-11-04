@@ -91,3 +91,37 @@ def test_delete_forever(client):
     resp = client.http.post("/api/sessions/trash/purge", json={"trash_id": entry["trash_id"]})
     assert resp.status_code == 200 and resp.json()["removed"] == 1
     assert client.http.get("/api/sessions/trash").json()["entries"] == []
+
+
+def test_trash_routes_work_while_the_gateway_owns_the_store(client, monkeypatch):
+    """The desktop's backend is ``hermes gateway run``: the web routes run inside the gateway,
+    which holds the profile's owner lock. A second writer (the offline maintenance path) is
+    refused there with 409 "Gateway runtime already owns profile", so the routes must use the
+    gateway's own connection. Reproduces the shipped bug: the list came back 409 (shown empty)."""
+    from gateway.runtime_ownership import ProfileOwnership
+    from hermes_cli.web_server import app
+
+    home = client.db.db_path.parent
+    monkeypatch.setattr(app.state, "gateway_runner", SimpleNamespace(session_authority=client.owner), raising=False)
+    lock = ProfileOwnership()
+    lock.reserve([home])  # what the running gateway holds
+    try:
+        _seed(client.db, "g1", "Owned chat")
+        _seed(client.db, "g2", "Owned chat 2")
+        assert _desktop_delete(client, "g1").status_code == 200
+        assert _desktop_delete(client, "g2").status_code == 200
+
+        listing = client.http.get("/api/sessions/trash")
+        assert listing.status_code == 200, listing.text
+        titles = {e["title"]: e["trash_id"] for e in listing.json()["entries"]}
+        assert set(titles) == {"Owned chat", "Owned chat 2"}
+
+        undo = client.http.post("/api/sessions/trash/restore", json={"session_id": "g1"})
+        assert undo.status_code == 200, undo.text
+        assert client.db.get_session(undo.json()["session_id"])["title"] == "Owned chat"
+
+        purge = client.http.post("/api/sessions/trash/purge", json={"trash_id": titles["Owned chat 2"]})
+        assert purge.status_code == 200, purge.text
+        assert client.http.get("/api/sessions/trash").json()["entries"] == []
+    finally:
+        lock.release(home)

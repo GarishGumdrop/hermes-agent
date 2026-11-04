@@ -339,7 +339,9 @@ This file is the list that review works from.
     (`sessions.trash_retention_days`, default 7).
   - Surfaces: `hermes_cli/web_routers/sessions.py` (`GET /api/sessions/trash`,
     `POST /api/sessions/trash/restore`, `POST /api/sessions/trash/purge`, literal routes above the
-    `{session_id}` family); `hermes_cli/sessions_trash_cmd.py` (new: `hermes sessions trash
+    `{session_id}` family; they run on the gateway's own connection when the web server runs
+    inside the gateway, as the desktop's backend does, since a second writer is refused there with 409);
+    `hermes_cli/sessions_trash_cmd.py` (new: `hermes sessions trash
     list|restore|purge`), registered in `hermes_cli/subcommands/sessions.py` and
     `hermes_cli/sessions_cmd.py` (also prints the undo command after `hermes sessions delete`).
   - Desktop: `apps/desktop/src/fork/session-trash/` (new: `api.ts`, `undo.ts` (the 10 s toast),

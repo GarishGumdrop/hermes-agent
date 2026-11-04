@@ -242,10 +242,11 @@ def purge_trash(db, trash_id: Optional[str] = None, *, everything: bool = False)
 
 # ── listing ─────────────────────────────────────────────────────────────────────────────────────
 
-def list_trash(db) -> list[dict]:
-    """Restorable entries, newest first. Expired entries are purged first (when writable)."""
+def list_trash(db, *, purge: bool = True) -> list[dict]:
+    """Restorable entries, newest first. With ``purge`` (and a writable store) expired entries are
+    deleted first; either way they are left out of the list."""
     days = retention_days()
-    if getattr(db, 'read_only', False) is False:
+    if purge and getattr(db, 'read_only', False) is False:
         try:
             purge_trash(db)
         except Exception:  # health: allow BLE001 -- listing must not fail on a purge hiccup
