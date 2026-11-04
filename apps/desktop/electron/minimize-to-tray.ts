@@ -14,6 +14,8 @@ interface Options {
   restoreMainWindow: () => void
   isQuittingForHandoff: () => boolean
   log: (message: string) => void
+  /** FORK (change 19): default false = Minimize uses the taskbar; only Close hides to the tray. */
+  minimizeHidesToTray?: boolean
 }
 
 /** Device-local native preference; renderer windows only cache its status. */
@@ -246,7 +248,12 @@ export function createMinimizeToTray(options: Options) {
     // restore-on-hidden path back to a painted-but-dead window (#119252).
     // Guards are re-evaluated at fire time inside hide(); the close handler
     // below keeps its synchronous hide so preventDefault still works.
+    // FORK (change 19): minimize goes to the taskbar; only Close hides to the tray.
     win.on('minimize', () => {
+      if (!options.minimizeHidesToTray) {
+        return
+      }
+
       setImmediate(() => {
         // The user may have restored the window in the meantime (taskbar or
         // shortcut); a stale hide must not snatch it back.

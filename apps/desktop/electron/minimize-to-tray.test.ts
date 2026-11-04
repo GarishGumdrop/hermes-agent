@@ -130,7 +130,8 @@ function setup() {
     getIconPath: () => 'icon.png',
     restoreMainWindow: () => main.showInactive(),
     isQuittingForHandoff: () => handoff,
-    log: vi.fn()
+    log: vi.fn(),
+    minimizeHidesToTray: true
   })
 
   controller.registerWindow(main as unknown as BrowserWindow, { closeToTray: true })
@@ -395,4 +396,28 @@ test('persistence, disabling, failed tray creation, and handoff never strand hid
   expect(await disabled.controller.start()).toEqual({ enabled: false, available: false })
   disabled.main.close()
   expect(disabled.main.destroyed).toBe(true)
+})
+
+test('by default Minimize keeps the window on the taskbar while Close hides it to the tray', async () => {
+  const main = new Window()
+  native.windows.push(main)
+
+  const controller = createMinimizeToTray({
+    preferencesPath: path.join(home, 'minimize-to-tray.json'),
+    getIconPath: () => 'icon.png',
+    restoreMainWindow: () => main.showInactive(),
+    isQuittingForHandoff: () => false,
+    log: vi.fn()
+  })
+
+  controller.registerWindow(main as unknown as BrowserWindow, { closeToTray: true })
+  await controller.setEnabled(true)
+  main.minimize()
+  await flushDeferredHide()
+  expect(main.visible).toBe(true)
+  expect(main.skipped).toBe(false)
+  main.restore()
+  main.close()
+  expect(main.destroyed).toBe(false)
+  expect(main.visible).toBe(false)
 })

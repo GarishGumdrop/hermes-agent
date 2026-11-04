@@ -369,6 +369,15 @@ This file is the list that review works from.
   two media collectors (`release_unheld_media`, `referenced_spillover_names`); the toast API
   (`notify` with `action`) and `restoreListedSession` on the desktop.
 
+### 19. Minimize goes to the taskbar; only Close hides to the tray
+
+- **Files:** `apps/desktop/electron/minimize-to-tray.ts` (option `minimizeHidesToTray`, default
+  false, checked in the `minimize` handler of `registerWindow`); its test.
+- **Purpose:** the user wants Minimize to behave normally (taskbar) while Close still hides to
+  the tray when the tray setting is on. Upstream hides on both.
+- **If it breaks:** keep the `minimize` handler inert unless `options.minimizeHidesToTray` is
+  true, and `main.ts` must not pass it. The `close` handler is untouched.
+
 ## Pending review
 
 None.
