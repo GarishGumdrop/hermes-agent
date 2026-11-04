@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from gateway.session_contract import Principal
+from gateway.session_contract import SessionActor
 
 SID = '20261103_120000_abc123'
 
@@ -32,7 +32,7 @@ def test_restored_gateway_chat_is_adopted_again_on_resume(monkeypatch):
     runner = SimpleNamespace(session_store=store, _session_db=store._db, adapters={}, _draining=False,
                              _cached_agent_for=lambda route: None, _adapter_for_source=lambda source: None)
     authority = asyncio.run(initialize_session_authority(runner, profile_id=str(home), instance_id='fixture'))
-    actor = Principal('uid:1000', str(home), frozenset({'session:read', 'session:create'}), 'native')
+    actor = SessionActor('uid:1000', str(home), frozenset({'session:read', 'session:create'}), 'native')
     bind_native_transport(authority, actor, {'provider': 'local', 'profile_id': str(home), 'instance_id': 'fixture'})
     db = authority.db
     try:

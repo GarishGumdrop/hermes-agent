@@ -185,6 +185,7 @@ This file is the list that review works from.
     `terminal_list_scope`, and a line saying how many it left out); `hermes_cli/cli_session_mixin.py`
     and `hermes_cli/console_engine.py` (`/resume` and console lists, `internal_exclusions`);
     `hermes_cli/config_defaults.py` (`sessions.show_internal`);
+    `tools/session_search_tool.py` (`_hidden_session_sources`, so search leaves out what the lists do);
     `tui_gateway/methods_config_set.py` (config.set accepts `sessions.show_internal`).
   - Started by: `tui_gateway/contracts/canonical_sessions.py` (`launched_from`, `launched_by` on
     `CanonicalCreateParams`, regenerated into `apps/shared/src/gateway-contract.generated.ts` and
@@ -369,7 +370,7 @@ This file is the list that review works from.
   two media collectors (`release_unheld_media`, `referenced_spillover_names`); the toast API
   (`notify` with `action`) and `restoreListedSession` on the desktop.
 
-### 19. Minimize goes to the taskbar; only Close hides to the tray
+### 20. Minimize goes to the taskbar; only Close hides to the tray
 
 - **Files:** `apps/desktop/electron/minimize-to-tray.ts` (option `minimizeHidesToTray`, default
   false, checked in the `minimize` handler of `registerWindow`); its test.
