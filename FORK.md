@@ -283,10 +283,7 @@ This file is the list that review works from.
   guard. If upstream renames or splits these functions, put the guard on
   whatever now decides native window opacity, the window backdrop/material and
   the resolved intensity. If upstream adds a new translucency path (a new
-  setting, material or CSS surface), lock it the same way. After every merge,
-  search `apps/desktop/src` for background fills mixed towards `transparent`
-  from a surface colour and for new `--composer-fill` states, and add any the
-  sheet does not cover. Keep the
+  setting, material or CSS surface), lock it the same way. Keep the
   no-see-through script loaded from `index.html`.
 
 ### 7. Configurable skill description length, checked before a new skill is staged
