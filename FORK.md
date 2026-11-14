@@ -55,6 +55,25 @@ This file is the list that review works from.
   startup before windows open, and keep the preload block after the app's own
   `exposeInMainWorld('hermesDesktop', ...)` call.
 
+### 3. The curator asks before archiving an unused skill
+
+- **Files:** `agent/curator.py` (`archive_approval_enabled`, `_load_proposals` / `_save_proposals`,
+  `_settle_proposals`, `_propose_archive`, the `approval` branch of the inactivity archive);
+  `tools/skill_manager_tool.py` (the `archive` handler `_archive_approved`, not in the tool schema);
+  `tools/write_approval.py` (`plain_summary` on `stage_write`, the `archive` gist);
+  `hermes_cli/config_defaults.py` (`curator.archive_approval`); tests in
+  `tests/agent/test_curator_archive_approval.py`. Added 15 Oct 2026 (6506fd9934); this entry was
+  missing from this file until 14 Nov 2026.
+- **Purpose:** with `curator.archive_approval: true` (the user's setting), the curator no longer
+  archives a skill on its own after a period of disuse: it stages the archive as a pending skill
+  write with a plain reason, and the user approves or rejects it. A rejected proposal pins the
+  skill so it is kept and never proposed again. Off by default: standard behaviour unchanged.
+- **If it breaks:** usually NousResearch moved the curator's inactivity pass (since d4c073d9ab its
+  interval gate lives in `agent/idle_schedule.py`) or reshaped `stage_write` / the skill pending
+  replay. Keep: the automatic inactivity archive goes through the pending queue when the switch is
+  on; an approved proposal replays as the `archive` action; a vanished proposal for a skill that
+  still exists pins it.
+
 ### 4. Separate approval switch for edits to existing skills
 
 - **Files:** `tools/write_approval.py` (`EDITS_CONFIG_KEY`, `skill_edit_approval_enabled`,
@@ -214,6 +233,11 @@ This file is the list that review works from.
   `internal_sessions.py` used by every list; the `internal` slice and its count; both provenance
   fields in the closed create contract (a client that sends a field the contract lacks is refused);
   both client routes sending them only when the gateway advertises them.
+- **Reviewed 14 Nov 2026 against NousResearch d0b49116ec** (`client {name, version}` on
+  `session.create`): their label is a client's self-declared identity for plugins and
+  `session.info`, kept only inside the frozen launch request and never shown in a list. The fork's
+  `launched_from` / `launched_by` are a stored record shown as "Started by". Different features;
+  both fields sit side by side in `CanonicalCreateParams`.
 
 ### 17. Windows updates refresh the computer-use driver unless a logon task needs UAC
 
@@ -286,7 +310,8 @@ This file is the list that review works from.
   the linter, the tool description and /learn all read it, so at 100 the fork accepts and shows
   descriptions upstream would refuse or clip. The fork's code follows upstream's new structure
   (one budget check in `_guarded_write`, so it also covers explicit `SKILL.md` file paths; word
-  boundary clipping), with the fixed 60 swapped for the configured limit.
+  boundary clipping), with the fixed 60 swapped for the configured limit. Since NousResearch
+  2453c963b3 the tool description uses their shorter wording, with the configured limit.
 
 ### 10. The slash menu updates when skills or plugins change on disk
 
