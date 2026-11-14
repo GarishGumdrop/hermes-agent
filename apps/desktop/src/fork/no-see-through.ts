@@ -38,6 +38,14 @@ html, body, #root {
 [class*='bg-background/'] { background-color: var(--background) !important; }
 [class*='bg-card/'] { background-color: var(--card) !important; }
 [class*='bg-popover/'] { background-color: var(--popover) !important; }
+[class*='bg-[color-mix(in_srgb,var(--dt-card)_'] { background-color: var(--dt-card) !important; }
+[class*='bg-[color-mix(in_srgb,var(--dt-popover)_'] { background-color: var(--dt-popover) !important; }
+[class*='bg-[color-mix(in_srgb,var(--background)_'] { background-color: var(--background) !important; }
+[class*='bg-[color-mix(in_srgb,var(--card)_'] { background-color: var(--card) !important; }
+[class*='bg-[color-mix(in_srgb,var(--popover)_'] { background-color: var(--popover) !important; }
+:root, [data-slot='composer-root'], [data-slot='composer-root'][data-thread-scrolled-up] {
+  --composer-fill: var(--dt-card) !important;
+}
 [class*='bg-muted/'] { background-color: var(--muted) !important; }
 [class*='bg-sidebar/'] { background-color: var(--sidebar, var(--background)) !important; }
 [data-slot='dialog-overlay'],
