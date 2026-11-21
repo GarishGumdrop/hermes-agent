@@ -840,22 +840,28 @@ def resolve_skill_config_values(config_vars: list[dict[str, Any]]) -> dict[str, 
     return resolved
 
 
-SKILL_PROMPT_DESC_LIMIT = 60  # default; ``skills.description_limit`` overrides it
-
-
-def skill_prompt_desc_limit() -> int:
-    """Characters of a skill description shown in the system-prompt skill index (and the most a
-    new skill's description may have): ``skills.description_limit``, else SKILL_PROMPT_DESC_LIMIT."""
-    try:
-        from hermes_cli.config import load_config
-        value = int(((load_config() or {}).get("skills") or {}).get("description_limit") or 0)
-    except Exception:
-        value = 0
-    return value if value >= 20 else SKILL_PROMPT_DESC_LIMIT
-# Word-boundary clip helpers (NousResearch 3a3bf5648e/b66ab2bb7b): any whitespace
-# separates words, trailing punctuation is trimmed before the ellipsis.
+# Default max description chars shown per row of the system-prompt skill index, and the authoring
+# standard bundled skills are held to (tests/skills/test_authoring_standards.py). A profile can raise
+# its own index width with skills.index_desc_limit; skill_manage then accepts descriptions up to it.
+SKILL_PROMPT_DESC_LIMIT = 60
+# Frontmatter descriptions are capped at 1024 (tools/skill_manager_tool.py::MAX_DESCRIPTION_LENGTH).
+_SKILL_PROMPT_DESC_LIMIT_MAX = 1024
 _LAST_WHITESPACE_RE = re.compile(r"\s\S*$")
 _CLIP_TRAIL_RE = re.compile(r"[\s.,;:\-\u2013\u2014(/]+$")
+
+
+def get_skill_desc_limit() -> int:
+    """skills.index_desc_limit from the active profile's config.yaml, clamped to 60..1024; 60 when unset
+    or not an integer. Read per call so each served profile gets its own width."""
+    val = _skills_cfg_get("index_desc_limit")
+    if isinstance(val, str):
+        try:  # str.isdigit() accepts "²" and int() refuses >4300 digits: parse, never pre-check
+            val = int(val.strip())
+        except ValueError:
+            return SKILL_PROMPT_DESC_LIMIT
+    if not isinstance(val, int) or isinstance(val, bool):
+        return SKILL_PROMPT_DESC_LIMIT
+    return max(SKILL_PROMPT_DESC_LIMIT, min(val, _SKILL_PROMPT_DESC_LIMIT_MAX))
 
 
 def _normalize_skill_description(frontmatter: dict[str, Any]) -> str:
@@ -864,28 +870,27 @@ def _normalize_skill_description(frontmatter: dict[str, Any]) -> str:
     return str(raw_desc).strip().strip("'\"") if raw_desc else ""
 
 
-def clip_skill_description(desc: str, limit: Optional[int] = None) -> str:
-    """*desc* fitted to *limit* (default: skill_prompt_desc_limit()), cut at a word boundary so
-    the index never shows a half word."""
-    if limit is None:
-        limit = skill_prompt_desc_limit()
-    if len(desc) <= limit:
+def clip_skill_description(desc: str, limit: int | None = None) -> str:
+    """*desc* fitted to *limit* (default: get_skill_desc_limit()), cut at a word boundary so the index never shows a half word."""
+    max_len = limit if limit is not None else get_skill_desc_limit()
+    if len(desc) <= max_len:
         return desc
-    head = desc[:limit - 2]  # one char past the budget: whitespace there means the last word is whole
+    head = desc[:max_len - 2]  # one char past the budget: whitespace there means the last word is whole
     boundary = _LAST_WHITESPACE_RE.search(head)  # any whitespace (tab, NBSP, ...) separates words, not just " "
     if not boundary or boundary.start() == 0:  # a single word longer than the budget has no boundary to cut at
-        return desc[:limit - 3] + "..."
+        return desc[:max_len - 3] + "..."
     return _CLIP_TRAIL_RE.sub("", head[:boundary.start()]) + "..."
 
 
-def extract_skill_description(frontmatter: dict[str, Any]) -> str:
+def extract_skill_description(frontmatter: dict[str, Any], limit: int | None = None) -> str:
     """Extract a system-prompt-length description from parsed frontmatter."""
-    return clip_skill_description(_normalize_skill_description(frontmatter))
+    return clip_skill_description(_normalize_skill_description(frontmatter), limit=limit)
 
 
-def is_skill_description_truncated_for_prompt(frontmatter: dict[str, Any]) -> bool:
+def is_skill_description_truncated_for_prompt(frontmatter: dict[str, Any], limit: int | None = None) -> bool:
     """True when the description will be truncated in the system prompt skill index."""
-    return len(_normalize_skill_description(frontmatter)) > skill_prompt_desc_limit()
+    max_len = limit if limit is not None else get_skill_desc_limit()
+    return len(_normalize_skill_description(frontmatter)) > max_len
 
 
 def iter_skill_index_files(skills_dir: Path, filename: str):

@@ -164,21 +164,6 @@ This file is the list that review works from.
   sideways anywhere. Their scroll expectations and browser-host test were
   removed; only the fork's wrap test stays.
 
-### 13. The /learn prompt uses the configured skill description limit
-
-- **Files:** `agent/learn_prompt.py` (`_AUTHORING_STANDARDS` is a
-  `{desc_limit}` template; `build_learn_prompt` takes an optional
-  `description_limit`, defaulting to `skill_prompt_desc_limit()`);
-  `tests/agent/test_learn_prompt.py` (`TestDescriptionLimit`).
-- **Purpose:** the prompt told the drafting agent every new description must
-  fit 60 characters, while the user's `skills.description_limit` is 100 and
-  the create gate enforces 100 — so /learn cut descriptions down for a limit
-  nothing else applied. The prompt now renders the configured limit, like the
-  index truncation and the create check already do.
-- **If it breaks:** keep the description number in the prompt read from the
-  same function as the index truncation, with an explicit override for tests
-  and callers.
-
 ### 14. Old dependency environments are removed on Windows
 
 - **Files:** `hermes_cli/runtime_state.py` (`collect_generations`,
@@ -196,22 +181,26 @@ This file is the list that review works from.
 ### 16. Internal sessions are listed and labelled instead of silently hidden
 
 - **Files:**
-  - Rule and lists: `hermes_cli/internal_sessions.py` (new: what counts as internal, the Internal
-    section's rows and count, the `sessions.show_internal` switch, "Started by" recording);
+  - Rule and lists: `hermes_cli/internal_sessions.py` (what counts as internal, the Internal
+    section's rows and count, the `sessions.show_internal` switch, "Started by" recording); the
+    query behind it in the storage layer: `persistence/sqlite/conversation/_store/internal_sessions.py`
+    (new), exposed as `SessionRepository.list_internal` / `count_internal`
+    (`persistence/conversation/sessions.py` protocol, `persistence/sqlite/conversation/sessions.py`);
     `hermes_cli/web_routers/profiles.py` (sidebar endpoint: `internal_limit` / `internal_token`, the
     `internal` slice, recents scope from `main_list_scope`); `tui_gateway/methods_projects.py`
     (project view, `project_tree_scope`); `hermes_cli/sessions_cmd.py` (`hermes sessions list`,
     `terminal_list_scope`, and a line saying how many it left out); `hermes_cli/cli_session_mixin.py`
-    and `hermes_cli/console_engine.py` (`/resume` and console lists, `internal_exclusions`);
-    `hermes_cli/config_defaults.py` (`sessions.show_internal`);
-    `tools/session_search_tool.py` (`_hidden_session_sources`, so search leaves out what the lists do);
+    and `hermes_cli/console_engine.py` (`/resume` and console lists, `internal_exclusions`, in place
+    of NousResearch's `INTERNAL_LISTING_SOURCES` there); `hermes_cli/config_defaults.py`
+    (`sessions.show_internal`); `tools/session_search_tool.py` (`_hidden_session_sources`);
     `tui_gateway/methods_config_set.py` (config.set accepts `sessions.show_internal`).
   - Started by: `tui_gateway/contracts/canonical_sessions.py` (`launched_from`, `launched_by` on
     `CanonicalCreateParams`, regenerated into `apps/shared/src/gateway-contract.generated.ts` and
     `.openrpc.json` by `scripts/gen_gateway_contracts.py`); `gateway/session_controls.py` (`_create`
     takes them out of the launch request and writes them to the new session's model_config as
     `_launched_from` / `_launched_by`; `describe` advertises them); `hermes_cli/gateway_chat.py` and
-    `hermes_cli/gateway_session_store.py` (both client routes send them, only when advertised).
+    `hermes_cli/gateway_session_store.py` (both client routes send them, only when advertised; in the
+    store's `session.create` params builder).
   - Desktop: `apps/desktop/src/fork/internal-sessions/` (new: `store.ts`, `group.ts`,
     `section.tsx`); hooks in `src/api/sessions.ts` (request and response fields),
     `src/app/session/hooks/use-session-list-actions.ts` (asks for and stores the slice; refreshes when
@@ -228,11 +217,15 @@ This file is the list that review works from.
   instead; `hermes sessions list` says how many it left out. `hermes chat` records the conversation
   whose agent ran the command (`HERMES_SESSION_ID`) and a program's own name (`HERMES_LAUNCHED_BY`, or
   `launched_by` on the arguments).
-- **If it breaks:** usually NousResearch changed the sidebar endpoint's slices, the arguments of
-  `list_sessions_rich`, the `session.create` contract or a client's creation path. Keep: one rule in
-  `internal_sessions.py` used by every list; the `internal` slice and its count; both provenance
+- **If it breaks:** usually NousResearch changed the sidebar endpoint's slices, the session query
+  types (`SessionQuery`, `SessionCountQuery`, `list_sessions`), the `session.create` contract or a
+  client's creation path. Keep: one rule in `internal_sessions.py` used by every list; the Internal
+  query inside the storage layer (the backend-import guard, `scripts/ci/check_backend_imports.py`,
+  refuses SQLite access outside `persistence/`); the `internal` slice and its count; both provenance
   fields in the closed create contract (a client that sends a field the contract lacks is refused);
   both client routes sending them only when the gateway advertises them.
+- **Ported 21 Nov 2026** onto NousResearch's storage interface after be3d6affc8 removed the old
+  session store (`hermes_state_*`).
 - **Reviewed 14 Nov 2026 against NousResearch d0b49116ec** (`client {name, version}` on
   `session.create`): their label is a client's self-declared identity for plugins and
   `session.info`, kept only inside the frozen launch request and never shown in a list. The fork's
@@ -286,36 +279,22 @@ This file is the list that review works from.
   setting, material or CSS surface), lock it the same way. Keep the
   no-see-through script loaded from `index.html`.
 
-### 7. Configurable skill description length, checked before a new skill is staged
+### 7. A new skill that would fail on approval is refused before it is staged
 
-- **Files:** `agent/skill_utils.py` (`skill_prompt_desc_limit()`, `clip_skill_description()`
-  with a limit parameter, used by the index truncation); `tools/skill_manager_tool.py`
-  (`_description_budget_error` in `_guarded_write`, `_staged_create_error` in `_run_write_gate`,
-  limit in the create check and the tool description); `tools/skill_linter.py`;
-  `hermes_cli/config_defaults.py` (`skills.description_limit`); docs in
-  `website/docs/user-guide/features/skills.md`; tests in
-  `tests/tools/test_skill_description_limit.py`.
-- **Purpose:** the user's limit is 100 characters (default 60), so each skill's line can say when
-  not to use it. A new skill that would fail on approval (too-long description, bad name, bad
-  frontmatter) is refused when proposed, so the author fixes it and the user never approves
-  something that then fails. The tool description states the real limit.
-- **If it breaks:** keep the limit read from config in one function; the budget check must run on
-  every write that reaches the root SKILL.md (that is where NousResearch put it); and the create
-  checks must keep running before a skill write is staged.
-- **Decided (3 Nov 2026):** the user keeps the fork's configurable limit (his is 100) over
-  NousResearch's fixed 60 (3a3bf5648e, df92e33081, b66ab2bb7b). That difference is settled and does
-  not send this entry back to Pending review; a later NousResearch change to skill descriptions is
-  reviewed as usual.
-- **Differences (NousResearch 3a3bf5648e, df92e33081, b66ab2bb7b):** upstream enforces a fixed
-  60 characters — the write-time budget check, the index clip width, the tool description and the
-  authoring-standards test all hard-code 60, and over-long index descriptions are clipped at a word
-  boundary (any whitespace counts). The fork keeps one configurable limit instead
-  (`skills.description_limit`, default 60, the user's is 100): the budget check, the clip width,
-  the linter, the tool description and /learn all read it, so at 100 the fork accepts and shows
-  descriptions upstream would refuse or clip. The fork's code follows upstream's new structure
-  (one budget check in `_guarded_write`, so it also covers explicit `SKILL.md` file paths; word
-  boundary clipping), with the fixed 60 swapped for the configured limit. Since NousResearch
-  2453c963b3 the tool description uses their shorter wording, with the configured limit.
+- **Files:** `tools/skill_manager_tool.py` (`_staged_create_error`, called in `_run_write_gate` before
+  `stage_write`); tests in `tests/tools/test_skill_description_limit.py`.
+- **Purpose:** with `skills.write_approval` on, a new skill whose name, category, frontmatter,
+  description length or size would fail when the user approves it is refused when proposed, so the
+  author fixes it and the user never approves something that then fails. The check runs the same
+  validators the create runs, including NousResearch's `_description_budget_error`.
+- **If it breaks:** keep the create checks running on every create in a staged write before
+  `stage_write`.
+- **Limit part replaced (21 Nov 2026 merge):** the configurable description limit this entry used to
+  carry (`skills.description_limit`, `skill_prompt_desc_limit()`, the clip width, linter and tool
+  description) is now NousResearch's own: `skills.index_desc_limit` / `get_skill_desc_limit()`
+  (1bcad483e1, ee57e22d18), which reads one configured limit everywhere. The fork's limit code was
+  removed. The user's 100 was moved to `skills.index_desc_limit`. (Earlier: **Decided 3 Nov 2026**
+  to keep a configurable limit over NousResearch's then-fixed 60; that difference no longer exists.)
 
 ### 10. The slash menu updates when skills or plugins change on disk
 
@@ -357,33 +336,36 @@ This file is the list that review works from.
 ### 19. Deleted sessions can be undone for 7 days
 
 - **Files:**
-  - Core: `hermes_state_trash.py` (new: the trash tables `session_trash` /
-    `session_trash_messages`, created on first use; snapshot, list, restore, purge; retention);
-    one hook line each in `hermes_state_sessions.py` (`delete_session`, `delete_sessions`) and
-    `hermes_state_mutation_retirement.py` (`delete_in_transaction`, the canonical delete the
-    desktop's `DELETE /api/sessions/<id>` runs), each calling `snapshot_for_trash` right before
-    `retire_sessions`; `gateway/session_ingress_media.py` (`_history_mentions` takes a `table`;
-    `release_unheld_media` keeps media a trashed message mentions); `tools/tool_result_storage.py`
-    (`referenced_spillover_names` counts trashed messages); `hermes_cli/config_defaults.py`
-    (`sessions.trash_retention_days`, default 7).
+  - Core (inside the storage layer): `persistence/sqlite/conversation/_store/trash.py` (new: the
+    trash tables `session_trash` / `session_trash_messages`, created on first use; snapshot, list,
+    restore, purge; retention read from the store's own profile config); one hook line each, right
+    before `retire_sessions`, in the three user delete paths: `persistence/sqlite/conversation/_store/sessions.py`
+    (`delete_session`, `delete_sessions`) and `persistence/sqlite/authority/_runtime_retirement.py`
+    (`delete_in_transaction`, the canonical delete the desktop's `DELETE /api/sessions/<id>` runs);
+    `persistence/sqlite/authority/_admission_media.py` (`_history_mentions` takes a `table`;
+    `unheld_media` keeps media a trashed message mentions); `persistence/sqlite/conversation/messages.py`
+    (`spillover_reference_rows` also yields trashed messages, so `referenced_archive_refs` keeps their
+    archives); `hermes_cli/config_defaults.py` (`sessions.trash_retention_days`, default 7).
+  - Entry for surfaces: `persistence/session_trash.py` (new): what the web routes and the CLI call
+    with the storage handle they hold; after a purge it runs `collect_retired_media` on the folder the
+    store's file is in.
   - Surfaces: `hermes_cli/web_routers/sessions.py` (`GET /api/sessions/trash`,
     `POST /api/sessions/trash/restore`, `POST /api/sessions/trash/purge`, literal routes above the
-    `{session_id}` family; they run on the gateway's own connection when the web server runs
-    inside the gateway, as the desktop's backend does, since a second writer is refused there with 409);
-    `hermes_cli/sessions_trash_cmd.py` (new: `hermes sessions trash
-    list|restore|purge`), registered in `hermes_cli/subcommands/sessions.py` and
+    `{session_id}` family; they use the gateway's own store via `_owner_store_for` when the web server
+    runs inside the gateway, as the desktop's backend does); `hermes_cli/sessions_trash_cmd.py` (new:
+    `hermes sessions trash list|restore|purge`), registered in `hermes_cli/subcommands/sessions.py` and
     `hermes_cli/sessions_cmd.py` (also prints the undo command after `hermes sessions delete`).
   - Desktop: `apps/desktop/src/fork/session-trash/` (new: `api.ts`, `undo.ts` (the 10 s toast),
     `recently-deleted.tsx`); hooks in `src/app/session/hooks/use-session-actions/index.ts` (after
     `await deleteSession(...)`) and `src/app/settings/sessions-settings.tsx` (mounts Recently
     deleted below Archived).
   - Docs and tests: `website/docs/user-guide/sessions.md` ("Undo a Delete");
-    `tests/hermes_state/test_session_trash.py`, `tests/hermes_cli/test_web_session_trash.py`,
+    `tests/persistence_sqlite/core/test_session_trash.py`, `tests/hermes_cli/test_web_session_trash.py`,
     `tests/gateway/test_session_trash_resume.py`, `apps/desktop/src/fork/session-trash/session-trash.test.ts`.
     Two upstream tests that check what a delete frees at once
-    (`tests/gateway/test_api_retired_media.py::test_rejected_api_images_are_collected_and_history_owns_accepted_images`,
-    `tests/hermes_state/test_hermes_state.py::TestVacuum::test_freelist_ratio_reads_real_pragmas`) turn the
-    trash off with one monkeypatch line naming this entry.
+    (`tests/gateway/test_api_retired_media.py::test_rejected_api_images_are_collected_and_history_owns_accepted_images`
+    and the freelist check in `tests/persistence_sqlite/housekeeping/test_auto_prune_and_vacuum.py`) turn
+    the trash off with one monkeypatch line naming this entry.
 - **Purpose:** a delete was immediate and permanent, so an accidental click lost the
   conversation. Now a user delete (desktop, dashboard, CLI, TUI) copies the rows into the trash in
   the delete's own transaction. The desktop shows "Session deleted · Undo" for 10 s, and Settings >
@@ -396,10 +378,15 @@ This file is the list that review works from.
 - **If it breaks:** the code points it depends on: the three delete paths calling `retire_sessions`
   inside their write transaction (a new user-facing delete path needs the same one-line
   `snapshot_for_trash` call before its `retire_sessions`); the `sessions` / `messages` columns
-  (snapshots are stored per column name and restored onto whatever columns exist); the legacy
-  adoption rule for a routeless local row (`hermes_state_local_migration.validate_legacy_row`); the
-  two media collectors (`release_unheld_media`, `referenced_spillover_names`); the toast API
-  (`notify` with `action`) and `restoreListedSession` on the desktop.
+  (snapshots are stored per column name and restored onto whatever columns exist); the adoption of a
+  routeless local row on native resume (`gateway.session_local_migration.resolve_local_target`); the
+  retirement candidates for archives (`_store/media.retire_spillover`, collected by
+  `session_retention.collect_retired_spillover`: a purge hands its archives back as candidates); the
+  two reference collectors (`unheld_media`, `spillover_reference_rows`); the backend-import guard
+  (trash SQL stays under `persistence/`); the toast API (`notify` with `action`) and
+  `restoreListedSession` on the desktop.
+- **Ported 21 Nov 2026** onto NousResearch's storage interface after be3d6affc8 removed the old
+  session store (`hermes_state_*`).
 
 ### 20. Minimize goes to the taskbar; only Close hides to the tray
 
@@ -415,6 +402,15 @@ This file is the list that review works from.
 None.
 
 ## Retired
+
+### 13. The /learn prompt uses the configured skill description limit
+
+- **Files:** `agent/learn_prompt.py`, `tests/agent/test_learn_prompt.py` (`TestDescriptionLimit`).
+- **Purpose:** /learn told the drafting agent to keep descriptions to 60 characters while the user's
+  configured limit was 100.
+- **Replaced by:** NousResearch 1bcad483e1 and ee57e22d18 (21 Nov 2026 merge): `/learn` renders
+  `get_skill_desc_limit()`, the configurable `skills.index_desc_limit`. The fork's edit and its tests
+  were removed; NousResearch's versions of both files are used unchanged.
 
 ### 11. Nightly merge and review of NousResearch's main
 

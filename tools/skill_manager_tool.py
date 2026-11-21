@@ -20,14 +20,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import hermes_yaml as yaml
 
-from hermes_constants import get_hermes_home
 from utils import atomic_write_text, is_truthy_value
 from hermes_cli.config import cfg_get
 from agent.skill_utils import (
     extract_skill_description,
+    get_skill_desc_limit,
     is_skill_description_truncated_for_prompt,
     parse_frontmatter as _parse_frontmatter,
-    skill_prompt_desc_limit)
+    SKILL_PROMPT_DESC_LIMIT)
 from tools.skill_manager_guards import (
     _background_review_delete_guard, _background_review_preflight, _background_review_read_before_write_guard,
     _containing_skills_root, _curator_consolidation_delete_guard, _is_path_redirect, _pinned_guard,
@@ -37,6 +37,7 @@ from tools.skill_manager_batch import (
 from tools.skill_manager_scan import (
     _background_origin, _introduced_findings, _replaying_background_write, _scan_baseline)
 from tools.skills_guard import scan_skill, should_allow_install, format_scan_report
+from tools.skills_tool import _skills_dir
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +57,15 @@ def _scan_required() -> bool:
     return _guard_agent_created_enabled() or _background_origin()
 
 
-def _security_scan_skill(skill_dir: Path, baseline: Optional[Counter] = None) -> Optional[str]:
+def _security_scan_skill(skill_dir: Path, baseline: Optional[Counter] = None,
+                         files: Optional[list[Path]] = None) -> Optional[str]:
     """Post-write scan; error string if blocked, else None. An "ask" verdict
     (dangerous findings) is surfaced as an error so the agent can retry without them.
-    With a *baseline*, only findings absent from it count."""
+    With a *baseline* (taken over *files*), only findings absent from it count."""
     if not _scan_required():
         return None
     try:
-        result = scan_skill(skill_dir, source="agent-created")
+        result = scan_skill(skill_dir, source="agent-created", files=files)
         if baseline is not None:
             result = _introduced_findings(skill_dir, result, baseline)
         allowed, reason = should_allow_install(result)
@@ -75,23 +77,6 @@ def _security_scan_skill(skill_dir: Path, baseline: Optional[Counter] = None) ->
         logger.warning("Security scan failed for %s: %s", skill_dir, e, exc_info=True)
         return f"Security scan could not complete, so this skill was blocked: {e}"
     return None
-
-
-# All skills live in ~/.hermes/skills/ (single source of truth)
-HERMES_HOME = get_hermes_home()
-SKILLS_DIR = HERMES_HOME / "skills"
-_SKILLS_DIR_AT_IMPORT = SKILLS_DIR
-
-
-def _skills_dir() -> Path:
-    """Active profile's skills dir at call time (multi-profile runtimes rebind per session).
-    An explicitly patched module-level ``SKILLS_DIR`` (tests) wins over the live HERMES_HOME.
-
-    Long-lived multi-profile runtimes (Dashboard/TUI/Desktop backend, cron, kanban workers) import this
-    module once under the launch HERMES_HOME and later bind a different profile per session (#40677).
-    """
-    configured = Path(SKILLS_DIR)
-    return configured if configured != _SKILLS_DIR_AT_IMPORT else get_hermes_home() / "skills"
 
 
 def _skill_lock_path(name: str) -> Path:
@@ -156,10 +141,8 @@ def _validate_category(category: Optional[str]) -> Optional[str]:
     return _check_identifier(category, "Category", invalid)
 
 
-def _validate_frontmatter(content: str, *, new_skill: bool = False) -> Optional[str]:
-    """Validate frontmatter (name + description) and a non-empty body. ``new_skill`` (create
-    only) also enforces skill_prompt_desc_limit() so new skills never lose routing signal to
-    index truncation; edit/patch skip it so existing over-limit skills stay maintainable."""
+def _validate_frontmatter(content: str) -> Optional[str]:
+    """Validate frontmatter (name + description) and a non-empty body."""
     if not content.strip():
         return "Content cannot be empty."
     content = content.lstrip("\ufeff")  # tolerate a Windows UTF-8 BOM
@@ -180,13 +163,6 @@ def _validate_frontmatter(content: str, *, new_skill: bool = False) -> Optional[
     desc = str(parsed["description"])
     if len(desc) > MAX_DESCRIPTION_LENGTH:
         return f"Description exceeds {MAX_DESCRIPTION_LENGTH} characters."
-    if new_skill and len(desc.strip().strip("'\"")) > (limit := skill_prompt_desc_limit()):
-        return (
-            f"Description is {len(desc.strip())} chars — new skills must fit the "
-            f"{limit}-char system-prompt budget (one sentence, trigger first, "
-            f"ends with a period). The skill index truncates longer descriptions to "
-            f"{limit - 3} chars + '...', destroying the routing signal. "
-            f"Move detail into the skill body.")
     if not content[end_match.end() + 3:].strip():
         return "SKILL.md must have content after the frontmatter (instructions, procedures, etc.)."
     return None
@@ -194,10 +170,10 @@ def _validate_frontmatter(content: str, *, new_skill: bool = False) -> Optional[
 
 def _description_budget_error(content: str, before: Optional[str] = None) -> Optional[str]:
     """A description written by this call (a create, or an edit/patch that changes it from the one in
-    ``before``) must fit skill_prompt_desc_limit(), the width the skill index shows. An unchanged legacy
+    ``before``) must fit get_skill_desc_limit(), the width the skill index shows. An unchanged legacy
     over-limit description stays editable: a body patch must not be blocked by an old frontmatter."""
-    limit = skill_prompt_desc_limit()
     desc = _description_of(content) or ""
+    limit = get_skill_desc_limit()
     if len(desc) <= limit or (before is not None and desc == _description_of(before)):
         return None
     return (
@@ -439,28 +415,29 @@ def _guarded_write(name: str, skill_dir: Path, target: Path, action: str, label:
         original = target.read_text(encoding="utf-8-sig")
     if target == skill_dir / "SKILL.md" and (err := _description_budget_error(content, before=original)):
         return _err(err)
-    baseline, scan_error = _scan_baseline(skill_dir)
+    scope, baseline, scan_error = _scan_baseline(skill_dir, target)
     if scan_error:
         return _err(scan_error)
     from hermes_constants import mkdir_under_hermes_home
     mkdir_under_hermes_home(target.parent)
     atomic_write_text(target, content, preserve_mode=True, create_mode=0o644)
-    scan_error = _security_scan_skill(skill_dir, baseline)
+    scan_error = _security_scan_skill(skill_dir, baseline, scope)
     if not scan_error:
         return None
     if original is not None:
         atomic_write_text(target, original, preserve_mode=True)
-    else:
-        target.unlink(missing_ok=True)
+    else:  # a dangling symlink's write created its destination: remove that, keep the link
+        target.resolve().unlink(missing_ok=True)
     return _err(scan_error)
 
 
 def _add_description_prompt_preview(result: dict[str, Any], content: str) -> dict[str, Any]:
     fm, _ = _parse_frontmatter(content)
-    if is_skill_description_truncated_for_prompt(fm):
+    limit = get_skill_desc_limit()
+    if is_skill_description_truncated_for_prompt(fm, limit=limit):
         result["system_prompt_preview"] = (
-            f"System prompt will show: \"{extract_skill_description(fm)}\" — keep the trigger "
-            f"self-contained in the first {skill_prompt_desc_limit() - 3} chars.")
+            f"System prompt will show: \"{extract_skill_description(fm, limit=limit)}\" — shorten the "
+            f"description to {limit} chars so the index shows all of it.")
     return result
 
 
@@ -706,7 +683,8 @@ def _staged_create_error(payload: dict) -> Optional[str]:
         name = op.get("name") or payload.get("name") or ""
         content = op.get("content") or ""
         for err in (_validate_name(name), _validate_category(op.get("category")),
-                    _validate_frontmatter(content, new_skill=True), _validate_content_size(content)):
+                    _validate_frontmatter(content), _description_budget_error(content),
+                    _validate_content_size(content)):
             if err:
                 return f"Not staged — create on '{name}' would fail on approval: {err}"
     return None
@@ -893,7 +871,7 @@ def skill_manage(
 
 # --- OpenAI Function-Calling Schema -------------------------------------------
 
-def _skill_manage_description() -> str:
+def _skill_manage_description(desc_limit: int = SKILL_PROMPT_DESC_LIMIT) -> str:
     return (
         "Create, update or delete skills: your procedural memory for recurring "
         "tasks. The operations apply atomically — any failure rolls "
@@ -902,12 +880,19 @@ def _skill_manage_description() -> str:
         "ops), patch (targeted old_string/new_string fix — preferred), "
         "write_file/remove_file (supporting files), delete (sole "
         "op only). Existing skills are modified wherever they live. "
-        f"Description: max {skill_prompt_desc_limit()} chars, 'Use when <trigger>. <behavior>.', never "
+        f"Description: max {desc_limit} chars, 'Use when <trigger>. <behavior>.', never "
         "the category name (the index shows it). Write lessons, not logs: "
         "imperative rule + why, no PR numbers/dates/incident narration, one "
         "rule per lesson, references/ named by topic (extend before adding). "
         "skill_view() shows format conventions."
     )
+
+
+def _skill_manage_schema_overrides() -> dict | None:
+    """The description's char budget follows the active profile's skills.index_desc_limit. The default
+    width keeps the static schema bytes, so an unconfigured install's tools[] never changes."""
+    limit = get_skill_desc_limit()
+    return None if limit == SKILL_PROMPT_DESC_LIMIT else {"description": _skill_manage_description(limit)}
 
 
 _NAME = {"type": "string"}
@@ -996,6 +981,7 @@ from tools.registry import registry, tool_error
 
 registry.register(
     name="skill_manage", toolset="skills", schema=SKILL_MANAGE_SCHEMA, emoji="📝",
+    dynamic_schema_overrides=_skill_manage_schema_overrides,
     handler=lambda args, **kw: _skill_manage_from(
         args, task_id=kw.get("task_id"), session_id=kw.get("session_id")),
     # The flat single-op shape old transcripts replay, and the batch's top-level default name.

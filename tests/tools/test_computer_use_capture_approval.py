@@ -7,18 +7,20 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.computer_use_fakes import NoopBackend, reset_backend
+
 
 @pytest.fixture(autouse=True)
 def _state(monkeypatch):
     from tools.computer_use import tool as cu
 
-    cu.reset_backend_for_tests()
-    backend = cu._NoopBackend()
+    reset_backend()
+    backend = NoopBackend()
     monkeypatch.setattr(cu, "_new_backend", lambda permission_mode: backend)
     monkeypatch.setenv("HERMES_INTERACTIVE", "1")
     yield backend
     cu.set_approval_callback(None)
-    cu.reset_backend_for_tests()
+    reset_backend()
 
 
 def _run(cfg, args, answer="deny", approval_mode="off"):

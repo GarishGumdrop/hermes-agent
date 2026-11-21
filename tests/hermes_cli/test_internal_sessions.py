@@ -40,32 +40,27 @@ def client(monkeypatch, home):
         from starlette.testclient import TestClient
     except ImportError:
         pytest.skip("fastapi/starlette not installed")
-    import hermes_state
     from hermes_cli.web_server import _SESSION_HEADER_NAME, _SESSION_TOKEN, app
 
-    monkeypatch.setattr(hermes_state, "DEFAULT_DB_PATH", home / "state.db")
     c = TestClient(app)
     c.headers[_SESSION_HEADER_NAME] = _SESSION_TOKEN
     return c
 
 
+def _store(home):
+    from persistence_assembly import open_persistence, profile_scope
+
+    return open_persistence(profile_scope(home=home))
+
+
 def _seed(home, session_id, *, source="cli", messages=1, title=None, hidden=False, archived=False,
           model_config=None, parent=None):
-    from hermes_state import SessionDB
+    from tests.fixtures.storage_seed import seed_messages, seed_session
 
-    db = SessionDB(db_path=home / "state.db")
-    try:
-        db.create_session(session_id, source=source, model_config=model_config, parent_session_id=parent)
-        for _ in range(messages):
-            db.append_message(session_id=session_id, role="user", content="hi")
-        if title:
-            assert db.set_session_title(session_id, title)
-        if hidden:
-            db.set_session_hidden(session_id, True)
-        if archived:
-            db.set_session_archived(session_id, True)
-    finally:
-        db.close()
+    with _store(home) as store:
+        seed_session(store, session_id, source, model_config=model_config, parent_session_id=parent,
+                     title=title, hidden=hidden or None, archived=archived or None)
+        seed_messages(store, session_id, *({"role": "user", "content": "hi"} for _ in range(messages)))
 
 
 def _seed_every_kind(home):
@@ -126,7 +121,6 @@ class TestStartedBy:
 
     def test_headings_name_what_started_each_session(self, home):
         from hermes_cli.internal_sessions import list_internal_sessions
-        from hermes_state import SessionDB
 
         _seed(home, "chat", title="Fix the update")
         _seed(home, "probe", source="oneshot", model_config={"_launched_from": "chat"})
@@ -134,11 +128,8 @@ class TestStartedBy:
         _seed(home, "nightly", source="tool", model_config={"_launched_by": "Nightly update"})
         _seed(home, "test", source="tool",
               model_config={"_launched_from": "chat", "_launched_by": "Nightly update"})
-        db = SessionDB(db_path=home / "state.db")
-        try:
-            rows = {row["id"]: row for row in list_internal_sessions(db, 50)}
-        finally:
-            db.close()
+        with _store(home) as store:
+            rows = {row["id"]: row for row in list_internal_sessions(store, 50)}
         assert rows["probe"]["internal_origin"] == "Started by \u201cFix the update\u201d"
         assert rows["probe"]["launched_from"] == "chat"
         assert rows["probe"]["launched_from_title"] == "Fix the update"
@@ -148,17 +139,13 @@ class TestStartedBy:
 
     def test_recorded_provenance_merges_into_model_config(self, home):
         from hermes_cli.internal_sessions import pop_provenance, record_provenance
-        from hermes_state import SessionDB
 
         _seed(home, "run", source="oneshot", model_config={"_usage_anchor": {"x": 1}})
         params = {"source": "oneshot", "launched_from": "chat-1", "launched_by": "Nightly update"}
         provenance = pop_provenance(params)
         assert params == {"source": "oneshot"}
-        db = SessionDB(db_path=home / "state.db")
-        try:
-            record_provenance(db, "run", provenance)
-        finally:
-            db.close()
+        with _store(home) as store:
+            record_provenance(store, "run", provenance)
         conn = sqlite3.connect(home / "state.db")
         try:
             stored = json.loads(conn.execute("SELECT model_config FROM sessions WHERE id='run'").fetchone()[0])
@@ -168,11 +155,11 @@ class TestStartedBy:
 
     def test_invalid_provenance_is_refused(self):
         from hermes_cli.internal_sessions import pop_provenance
-        from hermes_state_runtime import RuntimeStoreError
+        from persistence import AuthorityRefusal
 
-        with pytest.raises(RuntimeStoreError):
+        with pytest.raises(AuthorityRefusal):
             pop_provenance({"launched_by": ""})
-        with pytest.raises(RuntimeStoreError):
+        with pytest.raises(AuthorityRefusal):
             pop_provenance({"launched_from": 7})
 
     def test_client_sends_only_what_the_gateway_advertises(self, monkeypatch):
@@ -227,18 +214,14 @@ class TestOtherLists:
         assert set(terminal_list_scope(None)["exclude_sources"]) == set(INTERNAL_SESSION_SOURCES)
         assert terminal_list_scope("tool") == {"exclude_sources": None}
         (home / "config.yaml").write_text("sessions:\n  show_internal: true\n", encoding="utf-8")
-        assert project_tree_scope(home)["exclude_sources"] == ["cron"]
+        assert project_tree_scope(home)["exclude_sources"] == ("cron",)
         assert terminal_list_scope(None)["include_hidden"] is True
 
     def test_terminal_note_counts_what_was_left_out(self, home):
         from hermes_cli.internal_sessions import terminal_list_note
-        from hermes_state import SessionDB
 
         _seed_every_kind(home)
-        db = SessionDB(db_path=home / "state.db")
-        try:
-            note = terminal_list_note(db, None)
+        with _store(home) as store:
+            note = terminal_list_note(store, None)
             assert note and note.startswith("5 internal sessions not listed")
-            assert terminal_list_note(db, "tool") is None
-        finally:
-            db.close()
+            assert terminal_list_note(store, "tool") is None

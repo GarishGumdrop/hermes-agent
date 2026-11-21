@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 INTERNAL_SESSION_SOURCES: tuple[str, ...] = ("acp", "kanban", "oneshot", "subagent", "tool")
 # Sources with a sidebar section of their own; never listed as internal.
@@ -62,9 +62,9 @@ def internal_exclusions(hermes_home: str | Path | None = None) -> list[str]:
 
 def main_list_scope(show: bool, include_subagents: bool,
                     exclude_sources: Optional[list[str]]) -> dict[str, Any]:
-    """``list_sessions_rich`` arguments for the desktop's main list. With the switch on, the
-    internal sessions join it: their sources leave the exclusions (cron and messaging keep their
-    own sections), and hidden rows, empty rows and subagent runs are admitted."""
+    """Listing filters (``SessionQuery`` fields) for the desktop's main list. With the switch on,
+    the internal sessions join it: their sources leave the exclusions (cron and messaging keep
+    their own sections), and hidden rows, empty rows and subagent runs are admitted."""
     if not show:
         return {"include_subagents": include_subagents, "exclude_sources": exclude_sources or None,
                 "min_message_count": 1}
@@ -73,18 +73,20 @@ def main_list_scope(show: bool, include_subagents: bool,
             "min_message_count": 0}
 
 
-def project_tree_scope(hermes_home: str | Path | None) -> dict[str, Any]:
-    """``list_sessions_rich`` arguments for the desktop's project view: the same rule."""
+def project_tree_scope(hermes_home: str | Path | None,
+                       excluded: Sequence[str] = _OWN_SECTION_SOURCES) -> dict[str, Any]:
+    """``SessionQuery`` filters for the desktop's project view: the same rule over the view's own
+    exclusions *excluded* (cron, messaging)."""
     if show_internal_sessions(hermes_home):
-        return {"exclude_sources": list(_OWN_SECTION_SOURCES), "min_message_count": 0,
-                "include_hidden": True, "include_subagents": True}
-    return {"exclude_sources": [*_OWN_SECTION_SOURCES, *INTERNAL_SESSION_SOURCES],
+        return {"exclude_sources": tuple(s for s in excluded if s not in INTERNAL_SESSION_SOURCES),
+                "min_message_count": 0, "include_hidden": True, "include_subagents": True}
+    return {"exclude_sources": tuple(dict.fromkeys([*excluded, *INTERNAL_SESSION_SOURCES])),
             "min_message_count": 1}
 
 
 def terminal_list_scope(source: Optional[str]) -> dict[str, Any]:
-    """``list_sessions_rich`` arguments for ``hermes sessions list``: the same rule, unless the
-    user asked for one source."""
+    """Listing filters for ``hermes sessions list``: the same rule, unless the user asked for one
+    source."""
     if source:
         return {"exclude_sources": None}
     if show_internal_sessions():
@@ -92,77 +94,62 @@ def terminal_list_scope(source: Optional[str]) -> dict[str, Any]:
     return {"exclude_sources": list(INTERNAL_SESSION_SOURCES), "min_message_count": 1}
 
 
+def scoped_session_rows(store, *, limit: int, offset: int = 0, order_by_last_active: bool = False,
+                        compact_rows: bool = False, include_pinned: bool = False,
+                        include_hidden: bool = False, **filters) -> list[dict[str, Any]]:
+    """``web_server_sessions._session_rows`` with ``include_hidden``, which a :func:`main_list_scope`
+    carries."""
+    from hermes_cli.web_server_sessions import _listing_filters
+    from persistence.conversation.sessions import SessionOrder, SessionQuery, SessionWindow
+
+    query = SessionQuery(**_listing_filters(**filters), include_pinned=include_pinned,
+                         include_hidden=include_hidden,
+                         order=SessionOrder.LAST_ACTIVE if order_by_last_active else SessionOrder.STARTED_AT)
+    entries = store.sessions.list_sessions(query, SessionWindow(limit=limit, offset=offset),
+                                           compact_rows=compact_rows)
+    return [entry.as_list_row() for entry in entries]
+
+
 # -- the Internal section's rows ---------------------------------------------------------------
 
-def _internal_where() -> str:
-    from hermes_state_common import _LISTABLE_CHILD_SQL
-    from hermes_state_sessions import _delegate_from_json
-
-    delegate = _delegate_from_json("s.model_config")
-    internal = ", ".join(f"'{s}'" for s in INTERNAL_SESSION_SOURCES)
-    own = ", ".join(f"'{s}'" for s in _OWN_SECTION_SOURCES)
-    # Compression continuations are left out: the list shows the conversation they continue.
-    return (
-        "s.archived = 0"
-        f" AND COALESCE(s.source, '') NOT IN ({own})"
-        f" AND ({_LISTABLE_CHILD_SQL} OR {delegate} IS NOT NULL)"
-        f" AND (s.source IN ({internal}) OR s.hidden <> 0 OR s.message_count = 0"
-        f" OR {delegate} IS NOT NULL)"
-    )
+def count_internal_sessions(store) -> int:
+    return int(store.sessions.count_internal(INTERNAL_SESSION_SOURCES, _OWN_SECTION_SOURCES))
 
 
-def count_internal_sessions(db) -> int:
-    row = db._read_one(f"SELECT COUNT(*) FROM sessions s WHERE {_internal_where()}")
-    return int(row[0]) if row else 0
+def _text(value: Any) -> Optional[str]:
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def list_internal_sessions(db, limit: int = 200) -> list[dict[str, Any]]:
+def list_internal_sessions(store, limit: int = 200) -> list[dict[str, Any]]:
     """The newest internal sessions, shaped like the sidebar's other rows, each with
     ``internal_origin`` (the heading it is grouped under) and its "Started by" fields."""
-    from hermes_state_common import _sql_json_extract, _sql_preview_raw, _sql_session_last_active
-
     limit = max(0, min(int(limit), MAX_INTERNAL_ROWS))
     if not limit:
         return []
-    launched_from = _sql_json_extract("s.model_config", f"$.{LAUNCHED_FROM_KEY}")
-    launched_by = _sql_json_extract("s.model_config", f"$.{LAUNCHED_BY_KEY}")
-    delegate_from = _sql_json_extract("s.model_config", "$._delegate_from")
-    launcher = f"COALESCE({launched_from}, {delegate_from})"
-    query = f"""
-        SELECT {db._compact_session_cols()},
-               s.hidden AS _internal_hidden,
-               {launched_from} AS _internal_launched_from,
-               {launched_by} AS _internal_launched_by,
-               {delegate_from} AS _internal_delegate_from,
-               (SELECT l.title FROM sessions l WHERE l.id = {launcher}) AS _internal_launcher_title,
-               (SELECT COUNT(*) FROM sessions l WHERE l.id = {launcher}) AS _internal_launcher_found,
-               {_sql_preview_raw()},
-               {_sql_session_last_active("s")} AS last_active
-        FROM sessions s
-        WHERE {_internal_where()}
-        ORDER BY last_active DESC, s.started_at DESC, s.id DESC
-        LIMIT ?
-    """
+    entries = store.sessions.list_internal(INTERNAL_SESSION_SOURCES, _OWN_SECTION_SOURCES, limit=limit)
+    launchers: dict[str, Any] = {}
     rows = []
-    for raw in db._read_all(query, [limit]):
-        row = db._list_row(raw)
-        fields = {key: row.pop(f"_internal_{key}", None) for key in (
-            "hidden", "launched_from", "launched_by", "delegate_from", "launcher_title",
-            "launcher_found")}
-        row["launched_from"] = fields["launched_from"] or fields["delegate_from"]
-        row["launched_from_title"] = fields["launcher_title"]
-        row["launched_by"] = fields["launched_by"]
-        row["internal_origin"] = origin_label(row, hidden=bool(fields["hidden"]),
-                                              subagent=bool(fields["delegate_from"]),
-                                              launcher_found=bool(fields["launcher_found"]))
-        row["unread"] = db.session_unread(row)
+    for entry in entries:
+        config = entry.session.model_config or {}
+        delegate_from = _text(config.get("_delegate_from"))
+        launched_from = _text(config.get(LAUNCHED_FROM_KEY)) or delegate_from
+        if launched_from and launched_from not in launchers:
+            launchers[launched_from] = store.sessions.list_row(launched_from)
+        launcher = launchers.get(launched_from) if launched_from else None
+        row = entry.as_list_row()
+        row["launched_from"] = launched_from
+        row["launched_from_title"] = launcher.title if launcher is not None else None
+        row["launched_by"] = _text(config.get(LAUNCHED_BY_KEY))
+        row["internal_origin"] = origin_label(row, hidden=bool(entry.session.hidden),
+                                              subagent=bool(delegate_from),
+                                              launcher_found=launcher is not None)
         rows.append(row)
     return rows
 
 
-def internal_slice(db, limit: int) -> dict[str, Any]:
+def internal_slice(store, limit: int) -> dict[str, Any]:
     """The Internal section's payload for one profile's store."""
-    return {"sessions": list_internal_sessions(db, limit), "total": count_internal_sessions(db)}
+    return {"sessions": list_internal_sessions(store, limit), "total": count_internal_sessions(store)}
 
 
 def origin_label(row: dict[str, Any], *, hidden: bool, subagent: bool,
@@ -203,11 +190,11 @@ def origin_label(row: dict[str, Any], *, hidden: bool, subagent: bool,
     return "Other"
 
 
-def terminal_list_note(db, source: Optional[str]) -> Optional[str]:
+def terminal_list_note(store, source: Optional[str]) -> Optional[str]:
     """The line under ``hermes sessions list`` saying how many internal sessions it left out."""
     if source or show_internal_sessions():
         return None
-    count = count_internal_sessions(db)
+    count = count_internal_sessions(store)
     if not count:
         return None
     noun = "session" if count == 1 else "sessions"
@@ -237,7 +224,7 @@ def launch_provenance(args: Any = None, parameters: Any = None) -> dict[str, str
 def pop_provenance(params: dict[str, Any]) -> dict[str, str]:
     """Server side: take the provenance options out of a ``session.create`` request (they are
     not launch policy, so the frozen request never carries them) and validate them."""
-    from hermes_state_runtime import RuntimeStoreError
+    from persistence.core.errors import AuthorityRefusal
 
     out: dict[str, str] = {}
     for name, limit in (("launched_from", _MAX_SESSION_ID_CHARS),
@@ -246,13 +233,13 @@ def pop_provenance(params: dict[str, Any]) -> dict[str, str]:
             continue
         value = params.pop(name)
         if not isinstance(value, str) or not value.strip() or len(value) > limit:
-            raise RuntimeStoreError("invalid_params", field=name,
+            raise AuthorityRefusal("invalid_params", field=name,
                                     detail=f"must be a non-empty string of at most {limit} characters")
         out[name] = value.strip()
     return out
 
 
-def record_provenance(db, session_id: str, provenance: dict[str, str]) -> None:
+def record_provenance(store, session_id: str, provenance: dict[str, str]) -> None:
     """Write the provenance into the new session's model_config (merged, like the other
     creation markers)."""
     patch: dict[str, str] = {}
@@ -261,4 +248,4 @@ def record_provenance(db, session_id: str, provenance: dict[str, str]) -> None:
     if provenance.get("launched_by"):
         patch[LAUNCHED_BY_KEY] = provenance["launched_by"]
     if patch:
-        db._write_model_config_patch(session_id, patch)
+        store.sessions.patch_model_config(session_id, patch)

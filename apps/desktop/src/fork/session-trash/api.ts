@@ -2,7 +2,8 @@
  * FORK ADDITION (GarishGumdrop/hermes-agent, fork change 19) — REST calls for the session trash.
  *
  * A user delete keeps a restorable copy for `sessions.trash_retention_days` days (default 7):
- * hermes_state_trash.py is the backend half, hermes_cli/web_routers/sessions.py the routes.
+ * persistence/sqlite/conversation/_store/trash.py (door: persistence/session_trash.py) is the backend
+ * half, hermes_cli/web_routers/sessions.py the routes.
  * Requests are scoped like the delete they undo (mutateSessionHttp in src/api/sessions.ts): the
  * active connection plus the owning profile, named in the body for POSTs.
  */

@@ -1,6 +1,6 @@
 """Fork change 19: ``hermes sessions trash`` (list / restore / purge) — undo for session deletes.
 
-The trash itself lives in ``hermes_state_trash``; this is only the terminal surface for it.
+The trash itself lives in the store (``persistence.session_trash``); this is only the terminal surface for it.
 """
 from __future__ import annotations
 
@@ -31,13 +31,13 @@ def _age(seconds: float) -> str:
 
 
 def cmd_trash(db, args) -> int | None:
-    import hermes_state_trash as trash
+    import persistence.session_trash as trash
 
     action = getattr(args, "trash_action", None) or "list"
     if action == "list":
         entries = trash.list_trash(db)
         if not entries:
-            days = trash.retention_days()
+            days = trash.store_retention_days(db)
             print("No recently deleted sessions." if days > 0 else
                   "The session trash is off (sessions.trash_retention_days is 0).")
             return None
@@ -75,5 +75,5 @@ def cmd_trash(db, args) -> int | None:
 
 
 def _is_trash_id(db, key: str) -> bool:
-    import hermes_state_trash as trash
+    import persistence.session_trash as trash
     return any(e["trash_id"] == key for e in trash.list_trash(db))
