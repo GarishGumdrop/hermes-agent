@@ -39,6 +39,11 @@ This file is the list that review works from.
   `windowTranslucencyMode`) is included and sets light and dark together. Since
   change 18 they cannot make anything see-through; they stay so the keys still
   resolve.
+- Desktop theme (`theme`, any installed theme name, read live from
+  `listAllThemes`) and `themeMode` (light/dark/system) go through
+  `requestTheme`/`requestMode` in `apps/desktop/src/themes/request.ts`, read back
+  with `committedTheme` and `modePref` from `themes/context.tsx`. If those are
+  renamed, re-point the two table entries to the new imperative theme setters.
 
 ### 2. Agent screenshots of the app window
 

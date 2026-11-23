@@ -45,6 +45,7 @@ import {
   setNativeNotifyEnabled,
   setNativeNotifyKind
 } from '@/store/native-notifications'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { $reactionsEnabled, setReactionsEnabled } from '@/store/reactions-enabled'
 import { $reasoningCollapsedByDefault, setReasoningCollapsedByDefault } from '@/store/reasoning-disclosure'
 import { $sessionListDensity, setSessionListDensity } from '@/store/session-list-density'
@@ -60,6 +61,9 @@ import { $userBubbleTransparency, setUserBubbleTransparency } from '@/store/user
 import { $vibeHeartsEnabled, setVibeHeartsEnabled } from '@/store/vibe-hearts-enabled'
 import { $autoSpeakReplies, setAutoSpeakReplies } from '@/store/voice-prefs'
 import { $zoomPercent, setZoomPercent } from '@/store/zoom'
+import { committedTheme, modePref, type ThemeMode } from '@/themes/context'
+import { requestMode, requestTheme } from '@/themes/request'
+import { listAllThemes } from '@/themes/user-themes'
 
 type Value = boolean | number | string
 
@@ -116,6 +120,28 @@ const setBothAppearances = (patch: { fade?: number; intensity?: number }) => {
 }
 
 const SETTINGS: Record<string, SettingSpec> = {
+  // Appearance > Theme. Both go through the app's imperative theme requests,
+  // which the ThemeProvider drains exactly like a pick on the Settings page.
+  theme: {
+    label: 'Desktop theme',
+    type: 'choice',
+    // Installed themes change at runtime (user, backend and plugin themes), so read them each time.
+    get choices() {
+      return listAllThemes().map(t => t.name)
+    },
+    get: () => committedTheme().name,
+    set: (name: string) => {
+      if (!requestTheme(name)) {
+        throw new Error(`theme not installed: ${name}`)
+      }
+    }
+  },
+  themeMode: choice(
+    'Light/dark mode',
+    ['light', 'dark', 'system'] as const,
+    { get: () => modePref.resolve(normalizeProfileKey($activeGatewayProfile.get())) },
+    (mode: ThemeMode) => requestMode(mode)
+  ),
   // Appearance > Typography
   chatTextScale: choice('Chat text size (percent)', CHAT_TEXT_SCALE_PRESETS, $chatTextScale, setChatTextScale),
   uiScale: num('Interface zoom (percent)', 50, 300, $zoomPercent, setZoomPercent),
