@@ -846,6 +846,34 @@ def get_plugin_manager() -> PluginManager:
     return manager
 
 
+def release_plugin_manager_for_home(home: Path) -> bool:
+    """Unload and forget the plugin manager cached for ``home`` and stop its plugin host process.
+
+    Used by profile delete: the host process runs with the profile directory as its working
+    directory, and on Windows that blocks removing the directory (WinError 32). Returns True when a
+    manager was cached for ``home``.
+    """
+    global _plugin_manager
+    try:
+        key = Path(home).expanduser().resolve()
+    except Exception:
+        key = Path(home).expanduser()
+    with _plugin_managers_lock:
+        manager = _plugin_managers_by_home.pop(key, None)
+        if manager is not None and _plugin_manager is manager:
+            _plugin_manager = None
+    if manager is None:
+        return False
+    with suppress(Exception):
+        manager.unload()
+    _clear_plugin_submodules(manager)
+    host = getattr(manager, "_plugin_host_instance", None)
+    if host is not None:
+        with suppress(Exception):
+            host.shutdown()
+    return True
+
+
 def _reset_plugin_managers_for_tests() -> None:
     """Test-only: drop every cached manager and its submodules for a fully clean slate."""
     global _plugin_manager, _published_gateway_message_injector, _published_tui_message_injector

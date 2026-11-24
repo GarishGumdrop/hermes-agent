@@ -1770,6 +1770,13 @@ def delete_profile(name: str, yes: bool = False) -> Path:
         if _released_logs:
             print(f"✓ Released {_released_logs} profile log handler(s) held by this process")
 
+    # Fork: stop this profile's plugin host process. Its working directory is the profile
+    # directory, so on Windows a live host makes the rmtree below fail with WinError 32.
+    with contextlib.suppress(Exception):
+        from hermes_cli.plugins import release_plugin_manager_for_home
+        if release_plugin_manager_for_home(profile_dir):
+            print("✓ Stopped this profile's plugin host")
+
     # 3. Remove wrapper script
     if wrapper_path and remove_wrapper_script(canon):
         print(f"✓ Removed {wrapper_path}")

@@ -402,6 +402,20 @@ This file is the list that review works from.
 - **If it breaks:** keep the `minimize` handler inert unless `options.minimizeHidesToTray` is
   true, and `main.ts` must not pass it. The `close` handler is untouched.
 
+### 21. Deleting a profile stops that profile's plugin host
+
+- **Files:** `hermes_cli/plugins.py` (`release_plugin_manager_for_home`), one call in
+  `hermes_cli/profiles.py` `delete_profile` next to the MCP / memory-store / log-handler releases;
+  test `tests/hermes_cli/test_fork_profile_delete_plugin_host.py`.
+- **Purpose:** each profile's plugin host process (`hermes_cli.plugin_host_child`, child of the
+  backend) runs with the profile directory as its working directory (`PluginHost.ensure_started`,
+  `cwd=str(self._home)`). `delete_profile` never stopped it, so on Windows the final rmdir of the
+  emptied directory failed with WinError 32 and the host outlived desktop app restarts. Reported
+  upstream as NousResearch #159497.
+- **If it breaks:** `delete_profile` must stop the deleted profile's host before the rmtree. Hook
+  points: `_plugin_managers_by_home` (keyed by resolved home), `PluginManager._plugin_host_instance`,
+  `PluginHost.shutdown`. Retire this entry if NousResearch stops the host on delete itself.
+
 ## Pending review
 
 None.
